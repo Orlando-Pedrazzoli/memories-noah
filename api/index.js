@@ -15,18 +15,9 @@ const app = express();
 // ⭐ CORREÇÃO: Trust proxy para Vercel
 app.set('trust proxy', 1);
 
-// ⭐ CORS manual - ANTES de tudo
+// ⭐ CORS temporário com wildcard para teste
 app.use((req, res, next) => {
-  const allowedOrigins = [
-    'http://localhost:5173',
-    'https://noah-memories.vercel.app',
-  ];
-
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader(
     'Access-Control-Allow-Methods',
@@ -46,21 +37,21 @@ app.use((req, res, next) => {
   next();
 });
 
-// Security middleware
-app.use(helmet());
+// Security middleware (comentado temporariamente para teste)
+// app.use(helmet());
 app.use(morgan('combined'));
 
-// Rate limiting - ajustado para Vercel
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: req => {
-    return req.path === '/api/health';
-  },
-});
-app.use(limiter);
+// Rate limiting desabilitado temporariamente
+// const limiter = rateLimit({
+//   windowMs: 15 * 60 * 1000,
+//   max: 100,
+//   standardHeaders: true,
+//   legacyHeaders: false,
+//   skip: req => {
+//     return req.path === '/api/health';
+//   },
+// });
+// app.use(limiter);
 
 // Body parsing middleware
 app.use(express.json({ limit: '50mb' }));
@@ -74,7 +65,12 @@ app.use('/api/travel', travelRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Memory Site Server is running' });
+  res.json({
+    status: 'OK',
+    message: 'Memory Site Server is running',
+    cors: 'wildcard enabled for testing',
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // ⭐ Rota raiz para evitar 404
@@ -82,7 +78,8 @@ app.get('/', (req, res) => {
   res.json({
     message: 'Memory Site API',
     status: 'running',
-    cors: 'enabled',
+    cors: 'wildcard enabled for testing',
+    timestamp: new Date().toISOString(),
     endpoints: {
       health: '/api/health',
       auth: '/api/auth',
