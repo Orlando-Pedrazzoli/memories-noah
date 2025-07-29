@@ -9,7 +9,7 @@ const Navbar = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
-    { name: 'Memórias', path: '/', icon: Heart },
+    { name: 'Memórias', path: '/year/0-12-months', icon: Heart },
     { name: 'Viagens', path: '/travels', icon: MapPin },
     { name: 'Adicionar', path: '/upload', icon: Upload },
   ];
