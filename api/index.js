@@ -15,43 +15,47 @@ const app = express();
 // ⭐ CORREÇÃO: Trust proxy para Vercel
 app.set('trust proxy', 1);
 
-// ⭐ CORS temporário com wildcard para teste
+// ⭐ CORS CORRETO - Aplicar headers SEMPRE
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader(
+  // Aplicar headers CORS em TODA resposta
+  res.header('Access-Control-Allow-Origin', 'https://noah-memories.vercel.app');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header(
     'Access-Control-Allow-Methods',
-    'GET,OPTIONS,PATCH,DELETE,POST,PUT'
+    'GET,POST,PUT,DELETE,PATCH,OPTIONS'
   );
-  res.setHeader(
+  res.header(
     'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
+    'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-CSRF-Token, X-Api-Version'
   );
 
-  // Handle preflight requests
+  // Handle preflight OPTIONS requests
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    console.log('OPTIONS request received for:', req.url);
+    return res.status(200).json({
+      status: 'OK',
+      message: 'CORS preflight successful',
+    });
   }
 
   next();
 });
 
-// Security middleware (comentado temporariamente para teste)
-// app.use(helmet());
+// Security middleware
+app.use(helmet());
 app.use(morgan('combined'));
 
-// Rate limiting desabilitado temporariamente
-// const limiter = rateLimit({
-//   windowMs: 15 * 60 * 1000,
-//   max: 100,
-//   standardHeaders: true,
-//   legacyHeaders: false,
-//   skip: req => {
-//     return req.path === '/api/health';
-//   },
-// });
-// app.use(limiter);
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: req => {
+    return req.path === '/api/health' || req.method === 'OPTIONS';
+  },
+});
+app.use(limiter);
 
 // Body parsing middleware
 app.use(express.json({ limit: '50mb' }));
@@ -68,17 +72,17 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
     message: 'Memory Site Server is running',
-    cors: 'wildcard enabled for testing',
+    cors: 'properly configured',
     timestamp: new Date().toISOString(),
   });
 });
 
-// ⭐ Rota raiz para evitar 404
+// Root route
 app.get('/', (req, res) => {
   res.json({
     message: 'Memory Site API',
     status: 'running',
-    cors: 'wildcard enabled for testing',
+    cors: 'properly configured',
     timestamp: new Date().toISOString(),
     endpoints: {
       health: '/api/health',
