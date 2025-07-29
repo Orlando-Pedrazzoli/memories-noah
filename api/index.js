@@ -15,6 +15,37 @@ const app = express();
 // ⭐ CORREÇÃO: Trust proxy para Vercel
 app.set('trust proxy', 1);
 
+// ⭐ CORS manual - ANTES de tudo
+app.use((req, res, next) => {
+  const allowedOrigins = [
+    'http://localhost:5173',
+    'https://noah-memories.vercel.app',
+  ];
+
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'GET,OPTIONS,PATCH,DELETE,POST,PUT'
+  );
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
+  );
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
+  next();
+});
+
 // Security middleware
 app.use(helmet());
 app.use(morgan('combined'));
@@ -25,25 +56,11 @@ const limiter = rateLimit({
   max: 100, // limit each IP to 100 requests per windowMs
   standardHeaders: true,
   legacyHeaders: false,
-  // ⭐ Configuração específica para Vercel
   skip: req => {
-    // Skip rate limiting para health check
     return req.path === '/api/health';
   },
 });
 app.use(limiter);
-
-// CORS configuration
-app.use(
-  cors({
-    origin: [
-      'http://localhost:5173',
-      'https://noah-memories.vercel.app',
-      process.env.CLIENT_URL,
-    ].filter(Boolean), // Remove valores undefined/null
-    credentials: true,
-  })
-);
 
 // Body parsing middleware
 app.use(express.json({ limit: '50mb' }));
@@ -65,6 +82,7 @@ app.get('/', (req, res) => {
   res.json({
     message: 'Memory Site API',
     status: 'running',
+    cors: 'enabled',
     endpoints: {
       health: '/api/health',
       auth: '/api/auth',
@@ -92,5 +110,4 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// ⭐ DIFERENÇA PRINCIPAL: Export em vez de listen
 module.exports = app;
