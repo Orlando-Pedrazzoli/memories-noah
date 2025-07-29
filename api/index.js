@@ -12,14 +12,24 @@ const travelRoutes = require('./routes/travel');
 
 const app = express();
 
+// ⭐ CORREÇÃO: Trust proxy para Vercel
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet());
 app.use(morgan('combined'));
 
-// Rate limiting
+// Rate limiting - ajustado para Vercel
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  // ⭐ Configuração específica para Vercel
+  skip: req => {
+    // Skip rate limiting para health check
+    return req.path === '/api/health';
+  },
 });
 app.use(limiter);
 
@@ -44,6 +54,21 @@ app.use('/api/travel', travelRoutes);
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Memory Site Server is running' });
+});
+
+// ⭐ Rota raiz para evitar 404
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Memory Site API',
+    status: 'running',
+    endpoints: {
+      health: '/api/health',
+      auth: '/api/auth',
+      memories: '/api/memories',
+      travel: '/api/travel',
+      upload: '/api/upload',
+    },
+  });
 });
 
 // Error handling middleware
