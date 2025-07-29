@@ -36,7 +36,11 @@ app.use(limiter);
 // CORS configuration
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: [
+      'http://localhost:5173',
+      'https://noah-memories.vercel.app',
+      process.env.CLIENT_URL,
+    ].filter(Boolean), // Remove valores undefined/null
     credentials: true,
   })
 );
