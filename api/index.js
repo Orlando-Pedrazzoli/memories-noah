@@ -15,34 +15,48 @@ const app = express();
 // ⭐ CORREÇÃO: Trust proxy para Vercel
 app.set('trust proxy', 1);
 
-// ⭐ CORS CORRETO - Aplicar headers SEMPRE
-app.use((req, res, next) => {
-  // Aplicar headers CORS em TODA resposta
-  res.header('Access-Control-Allow-Origin', 'https://noah-memories.vercel.app');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header(
-    'Access-Control-Allow-Methods',
-    'GET,POST,PUT,DELETE,PATCH,OPTIONS'
-  );
-  res.header(
-    'Access-Control-Allow-Headers',
-    'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-CSRF-Token, X-Api-Version'
-  );
+// ⭐ CORS usando o package cors - configuração específica para Vercel
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permitir requisições sem origin (ex: Postman, mobile apps)
+    if (!origin) return callback(null, true);
 
-  // Handle preflight OPTIONS requests
-  if (req.method === 'OPTIONS') {
-    console.log('OPTIONS request received for:', req.url);
-    return res.status(200).json({
-      status: 'OK',
-      message: 'CORS preflight successful',
-    });
-  }
+    const allowedOrigins = [
+      'https://noah-memories.vercel.app',
+      'http://localhost:5173',
+      'http://localhost:3000',
+    ];
 
-  next();
-});
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Origin',
+    'X-Requested-With',
+    'Content-Type',
+    'Accept',
+    'Authorization',
+    'X-CSRF-Token',
+    'X-Api-Version',
+  ],
+  preflightContinue: false,
+  optionsSuccessStatus: 200,
+};
+
+app.use(cors(corsOptions));
 
 // Security middleware
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
 app.use(morgan('combined'));
 
 // Rate limiting
@@ -52,7 +66,7 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: req => {
-    return req.path === '/api/health' || req.method === 'OPTIONS';
+    return req.path === '/api/health';
   },
 });
 app.use(limiter);
@@ -72,7 +86,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
     message: 'Memory Site Server is running',
-    cors: 'properly configured',
+    cors: 'configured with cors package',
     timestamp: new Date().toISOString(),
   });
 });
@@ -82,7 +96,7 @@ app.get('/', (req, res) => {
   res.json({
     message: 'Memory Site API',
     status: 'running',
-    cors: 'properly configured',
+    cors: 'configured with cors package',
     timestamp: new Date().toISOString(),
     endpoints: {
       health: '/api/health',
