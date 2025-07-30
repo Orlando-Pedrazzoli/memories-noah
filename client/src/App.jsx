@@ -8,6 +8,7 @@ import {
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import ScrollToTop from './components/ScrollToTop';
 import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import YearDetailPage from './pages/YearDetailPage';
@@ -18,6 +19,9 @@ function App() {
   return (
     <AuthProvider>
       <Router>
+        {/* ⭐ ScrollToTop - vai para o topo em toda mudança de rota */}
+        <ScrollToTop />
+
         <div className='App'>
           <Routes>
             {/* Public Routes */}
