@@ -24,24 +24,10 @@ const LoginPage = () => {
   }
 
   const onSubmit = async data => {
-    console.log('🚀 onSubmit chamado com dados:', data);
-    console.log('👤 Username:', data.username);
-    console.log('🔒 Password:', data.password);
-
     setIsLoggingIn(true);
+    const result = await login(data.username, data.password);
 
-    try {
-      const result = await login(data.username, data.password);
-      console.log('📝 Resultado do login:', result);
-
-      if (!result.success) {
-        console.log('❌ Login falhou, parando loading...');
-        setIsLoggingIn(false);
-      } else {
-        console.log('✅ Login sucesso! Deveria redirecionar...');
-      }
-    } catch (error) {
-      console.error('💥 Erro no onSubmit:', error);
+    if (!result.success) {
       setIsLoggingIn(false);
     }
   };
@@ -72,17 +58,6 @@ const LoginPage = () => {
 
         {/* Login Form */}
         <div className='bg-white py-8 px-6 shadow-xl rounded-lg'>
-          {/* ⭐ DEBUG INFO */}
-          <div className='mb-4 p-2 bg-gray-100 rounded text-xs'>
-            <div>
-              <strong>Debug Info:</strong>
-            </div>
-            <div>API URL: {import.meta.env.VITE_API_URL}</div>
-            <div>isAuthenticated: {isAuthenticated.toString()}</div>
-            <div>loading: {loading.toString()}</div>
-            <div>isLoggingIn: {isLoggingIn.toString()}</div>
-          </div>
-
           <form className='space-y-6' onSubmit={handleSubmit(onSubmit)}>
             <div>
               <label
@@ -103,7 +78,6 @@ const LoginPage = () => {
                 id='username'
                 name='username'
                 autoComplete='username'
-                defaultValue='admin_memories'
                 className={`input-field ${
                   errors.username ? 'border-red-500 focus:ring-red-500' : ''
                 }`}
@@ -137,7 +111,6 @@ const LoginPage = () => {
                   id='password'
                   name='password'
                   autoComplete='current-password'
-                  defaultValue='33167960Riviera'
                   className={`input-field pr-10 ${
                     errors.password ? 'border-red-500 focus:ring-red-500' : ''
                   }`}
