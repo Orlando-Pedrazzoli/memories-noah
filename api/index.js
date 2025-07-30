@@ -1,49 +1,85 @@
 const express = require('express');
+const cors = require('cors');
 require('dotenv').config();
+
+const authRoutes = require('./routes/auth');
+const uploadRoutes = require('./routes/upload');
+const memoriesRoutes = require('./routes/memories');
+const travelRoutes = require('./routes/travel');
 
 const app = express();
 
-console.log('🚀 Starting API server...');
+app.set('trust proxy', 1);
 
-// CORS manual SIMPLES
-app.use((req, res, next) => {
-  console.log(`📝 Request: ${req.method} ${req.url}`);
+// ⭐ CORS usando o package cors (como no projeto anterior que funcionou)
+app.use(
+  cors({
+    origin: [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://noah-memories.vercel.app',
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  })
+);
 
-  res.header('Access-Control-Allow-Origin', 'https://noah-memories.vercel.app');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-  if (req.method === 'OPTIONS') {
-    console.log('✅ OPTIONS request handled');
-    return res.status(200).json({ cors: 'ok' });
-  }
-
-  next();
-});
-
-app.use(express.json());
-
-// Teste SIMPLES
+// Rotas públicas primeiro
 app.get('/', (req, res) => {
-  console.log('✅ Root accessed');
-  res.json({ message: 'API Working', timestamp: Date.now() });
+  res.json({
+    message: 'Memory Site API is Working',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    version: '1.0.0',
+    cors: 'enabled',
+    routes: {
+      health: '/api/health',
+      auth: '/api/auth/*',
+      memories: '/api/memories/*',
+      travel: '/api/travel/*',
+      upload: '/api/upload/*',
+    },
+  });
 });
 
 app.get('/api/health', (req, res) => {
-  console.log('✅ Health check accessed');
-  res.json({ status: 'OK', working: true, timestamp: Date.now() });
+  res.json({
+    status: 'OK',
+    message: 'Memory Site Server is running',
+    timestamp: new Date().toISOString(),
+    cors: 'enabled',
+  });
 });
 
-// AUTH ROUTES - SEM MIDDLEWARE
-const authRoutes = require('./routes/auth');
+// Rotas da aplicação
 app.use('/api/auth', authRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/memories', memoriesRoutes);
+app.use('/api/travel', travelRoutes);
 
-app.use('*', (req, res) => {
-  console.log(`❌ 404: ${req.method} ${req.url}`);
-  res.status(404).json({ error: 'Not found', path: req.url });
+// Error handling
+app.use((error, req, res, next) => {
+  console.error('❌ Server Error:', error);
+  res.status(500).json({
+    success: false,
+    message:
+      process.env.NODE_ENV === 'production'
+        ? 'Internal Server Error'
+        : error.message,
+  });
 });
 
-console.log('✅ API server configured');
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Route not found',
+    requestedPath: req.originalUrl,
+  });
+});
 
 module.exports = app;
