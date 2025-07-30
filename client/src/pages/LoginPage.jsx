@@ -76,6 +76,8 @@ const LoginPage = () => {
                 })}
                 type='text'
                 id='username'
+                name='username'
+                autoComplete='username'
                 className={`input-field ${
                   errors.username ? 'border-red-500 focus:ring-red-500' : ''
                 }`}
@@ -107,6 +109,8 @@ const LoginPage = () => {
                   })}
                   type={showPassword ? 'text' : 'password'}
                   id='password'
+                  name='password'
+                  autoComplete='current-password'
                   className={`input-field pr-10 ${
                     errors.password ? 'border-red-500 focus:ring-red-500' : ''
                   }`}
@@ -118,6 +122,7 @@ const LoginPage = () => {
                   className='absolute inset-y-0 right-0 pr-3 flex items-center'
                   onClick={() => setShowPassword(!showPassword)}
                   disabled={isLoggingIn}
+                  aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
                 >
                   {showPassword ? (
                     <EyeOff className='h-4 w-4 text-gray-400 hover:text-gray-600' />
