@@ -43,15 +43,35 @@ export const AuthProvider = ({ children }) => {
   const login = async (username, password) => {
     try {
       setLoading(true);
+
+      // ⭐ DEBUG - Ver o que está sendo enviado
+      console.log('🔐 Tentando login com:', { username, password });
+      console.log('🌐 API URL:', import.meta.env.VITE_API_URL);
+
       const response = await authService.login(username, password);
+
+      // ⭐ DEBUG - Ver a resposta
+      console.log('📤 Resposta do login:', response);
 
       if (response.success) {
         setUser(response.user);
         setIsAuthenticated(true);
         toast.success('Login realizado com sucesso!');
+        console.log('✅ Login bem-sucedido!');
         return { success: true };
+      } else {
+        console.log('❌ Login falhou - success: false');
+        toast.error('Credenciais inválidas');
+        return { success: false, error: 'Login failed' };
       }
     } catch (error) {
+      console.error('❌ Erro no login:', error);
+      console.log('📋 Detalhes do erro:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+
       const message = error.response?.data?.error || 'Erro ao fazer login';
       toast.error(message);
       return { success: false, error: message };

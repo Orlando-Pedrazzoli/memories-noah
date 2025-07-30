@@ -3,6 +3,9 @@ import Cookies from 'js-cookie';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
+// ⭐ DEBUG - Ver se a URL está correta
+console.log('🌐 API_URL configurada:', API_URL);
+
 // Create axios instance
 const api = axios.create({
   baseURL: API_URL,
@@ -12,6 +15,12 @@ const api = axios.create({
 // Request interceptor to add token
 api.interceptors.request.use(
   config => {
+    // ⭐ DEBUG - Ver requisições
+    console.log(
+      `📤 Fazendo requisição: ${config.method?.toUpperCase()} ${config.url}`
+    );
+    console.log('📋 Dados:', config.data);
+
     const token = Cookies.get('memory-token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -25,8 +34,18 @@ api.interceptors.request.use(
 
 // Response interceptor to handle token expiration
 api.interceptors.response.use(
-  response => response,
+  response => {
+    // ⭐ DEBUG - Ver respostas
+    console.log(`📥 Resposta recebida: ${response.status}`, response.data);
+    return response;
+  },
   error => {
+    console.error(
+      '❌ Erro na resposta:',
+      error.response?.status,
+      error.response?.data
+    );
+
     if (error.response?.status === 401) {
       Cookies.remove('memory-token');
       window.location.href = '/login';
@@ -38,10 +57,15 @@ api.interceptors.response.use(
 // Auth services
 export const authService = {
   login: async (username, password) => {
+    console.log('🔐 authService.login chamado com:', { username, password });
+
     const response = await api.post('/auth/login', { username, password });
+
     if (response.data.token) {
       Cookies.set('memory-token', response.data.token, { expires: 7 });
+      console.log('🍪 Token salvo nos cookies');
     }
+
     return response.data;
   },
 
