@@ -13,6 +13,9 @@ const travelRoutes = require('./routes/travel');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// ⭐ Trust proxy para Vercel/desenvolvimento
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet());
 app.use(morgan('combined'));
@@ -21,14 +24,23 @@ app.use(morgan('combined'));
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use(limiter);
 
-// CORS configuration
+// 🟢 CORS configurado como no projeto anterior
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://noah-memories.vercel.app',
+      process.env.CLIENT_URL,
+    ].filter(Boolean), // Remove valores undefined/null
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   })
 );
 
@@ -44,13 +56,38 @@ app.use('/api/travel', travelRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Memory Site Server is running' });
+  res.json({
+    status: 'OK',
+    message: 'Memory Site Server is running',
+    environment: process.env.NODE_ENV || 'development',
+    cors: 'enabled',
+    timestamp: new Date().toISOString(),
+  });
 });
 
-// Error handling middleware
+// ✅ Rota raiz melhorada
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Memory Site API is Working',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    version: '1.0.0',
+    cors: 'enabled',
+    routes: {
+      health: '/api/health',
+      auth: '/api/auth/*',
+      memories: '/api/memories/*',
+      travel: '/api/travel/*',
+      upload: '/api/upload/*',
+    },
+  });
+});
+
+// 🚨 Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('❌ Server Error:', err.stack);
   res.status(500).json({
+    success: false,
     error: 'Something went wrong!',
     message:
       process.env.NODE_ENV === 'development'
@@ -59,12 +96,26 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
+// ❌ 404 handler
 app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+  console.log('❌ Route not found:', req.method, req.originalUrl);
+  res.status(404).json({
+    success: false,
+    error: 'Route not found',
+    requestedPath: req.originalUrl,
+  });
 });
 
+// 🚀 Start server (apenas para desenvolvimento local)
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📁 Environment: ${process.env.NODE_ENV}`);
+  console.log(`📁 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(
+    `🌍 CORS enabled for: http://localhost:5173, https://noah-memories.vercel.app`
+  );
+  console.log('📋 Available endpoints:');
+  console.log('  - GET  /');
+  console.log('  - GET  /api/health');
+  console.log('  - POST /api/auth/login');
+  console.log('🎯 Ready to handle requests!');
 });
