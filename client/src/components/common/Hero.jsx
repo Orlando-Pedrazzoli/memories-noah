@@ -57,7 +57,7 @@ const Hero = () => {
               className='btn-secondary flex items-center space-x-2 px-6 py-3 text-lg'
             >
               <MapPin className='h-5 w-5' />
-              <span>Ver Viagens</span>
+              <span>Nossas Viagens</span>
             </Link>
           </div>
         </div>
