@@ -1,5 +1,4 @@
 const express = require('express');
-const cors = require('cors');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
@@ -9,81 +8,78 @@ const travelRoutes = require('./routes/travel');
 
 const app = express();
 
-// ⭐ Trust proxy para Vercel
 app.set('trust proxy', 1);
 
-// 🟢 CORS configurado EXATAMENTE como no projeto anterior que funcionou
-app.use(
-  cors({
-    origin: [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'https://noah-memories.vercel.app',
-    ],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  })
-);
+// ⭐ CORS MANUAL - GARANTIDO para funcionar
+app.use((req, res, next) => {
+  // Definir origem permitida
+  const allowedOrigin = 'https://noah-memories.vercel.app';
+  const origin = req.headers.origin;
 
-// 🔧 Middlewares de parsing
+  if (origin === allowedOrigin || !origin) {
+    res.header('Access-Control-Allow-Origin', allowedOrigin);
+  }
+
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header(
+    'Access-Control-Allow-Methods',
+    'GET,POST,PUT,DELETE,PATCH,OPTIONS'
+  );
+  res.header(
+    'Access-Control-Allow-Headers',
+    'Origin,X-Requested-With,Content-Type,Accept,Authorization,X-CSRF-Token'
+  );
+
+  // Responder imediatamente para OPTIONS
+  if (req.method === 'OPTIONS') {
+    console.log('OPTIONS request for:', req.url);
+    return res.status(200).json({
+      success: true,
+      message: 'CORS preflight OK',
+      headers: {
+        'Access-Control-Allow-Origin': allowedOrigin,
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS',
+        'Access-Control-Allow-Headers':
+          'Origin,X-Requested-With,Content-Type,Accept,Authorization,X-CSRF-Token',
+      },
+    });
+  }
+
+  next();
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// ✅ Health check melhorado
-app.get('/', (req, res) => {
-  res.json({
-    message: 'Memory Site API is Working',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
-    version: '1.0.0',
-    cors: 'enabled',
-    routes: {
-      health: '/api/health',
-      auth: '/api/auth/*',
-      memories: '/api/memories/*',
-      travel: '/api/travel/*',
-      upload: '/api/upload/*',
-    },
-  });
-});
-
-// 📦 Rotas principais
 app.use('/api/auth', authRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/memories', memoriesRoutes);
 app.use('/api/travel', travelRoutes);
 
-// Health check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
-    message: 'Memory Site Server is running',
+    message: 'Server running',
+    cors: 'manual headers applied',
     timestamp: new Date().toISOString(),
-    cors: 'enabled',
   });
 });
 
-// 🚨 Middleware de erro
-app.use((error, req, res, next) => {
-  console.error('❌ Server Error:', error);
-  res.status(500).json({
-    success: false,
-    message:
-      process.env.NODE_ENV === 'production'
-        ? 'Internal Server Error'
-        : error.message,
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Memory Site API',
+    cors: 'manual headers applied',
+    timestamp: new Date().toISOString(),
   });
 });
 
-// ❌ Rota não encontrada
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
 app.use('*', (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: 'Route not found',
-    requestedPath: req.originalUrl,
-  });
+  res.status(404).json({ error: 'Route not found' });
 });
 
-// ⭐ DIFERENÇA PRINCIPAL: Export para Vercel (sem app.listen)
 module.exports = app;
