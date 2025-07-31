@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { uploadService } from '../services/api';
 import Navbar from '../components/layout/Navbar';
@@ -14,6 +15,7 @@ import {
 import toast from 'react-hot-toast';
 
 const UploadPage = () => {
+  const navigate = useNavigate();
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -100,6 +102,15 @@ const UploadPage = () => {
           toast.success(
             `${response.images.length} imagens enviadas com sucesso!`
           );
+
+          // ⭐ REDIRECIONAR para a página do ano específico
+          setTimeout(() => {
+            navigate(`/year/${data.year}`, {
+              replace: true,
+              state: { fromUpload: true }, // Para forçar reload se necessário
+            });
+          }, 1500); // Delay para mostrar o toast
+
           resetForm();
         }
       } else {
@@ -114,14 +125,22 @@ const UploadPage = () => {
           toast.success(
             `Álbum de viagem "${data.travelName}" criado com sucesso!`
           );
+
+          // ⭐ REDIRECIONAR para a página de viagens
+          setTimeout(() => {
+            navigate('/travels', {
+              replace: true,
+              state: { fromUpload: true }, // Para forçar reload se necessário
+            });
+          }, 1500); // Delay para mostrar o toast
+
           resetForm();
         }
       }
     } catch (error) {
       console.error('Upload error:', error);
       toast.error('Erro ao enviar imagens');
-    } finally {
-      setUploading(false);
+      setUploading(false); // Só para erro, no sucesso o componente será desmontado
     }
   };
 
@@ -162,6 +181,7 @@ const UploadPage = () => {
                   ? 'border-primary-500 bg-primary-50 text-primary-700'
                   : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
               }`}
+              disabled={uploading}
             >
               <div className='flex items-center space-x-3'>
                 <ImageIcon className='h-6 w-6' />
@@ -182,6 +202,7 @@ const UploadPage = () => {
                   ? 'border-primary-500 bg-primary-50 text-primary-700'
                   : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
               }`}
+              disabled={uploading}
             >
               <div className='flex items-center space-x-3'>
                 <Upload className='h-6 w-6' />
@@ -354,13 +375,23 @@ const UploadPage = () => {
                   className='hidden'
                   disabled={uploading}
                 />
-                <div className='border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-primary-400 transition-colors duration-200 cursor-pointer'>
+                <div
+                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors duration-200 ${
+                    uploading
+                      ? 'border-gray-200 bg-gray-50 cursor-not-allowed'
+                      : 'border-gray-300 hover:border-primary-400 cursor-pointer'
+                  }`}
+                >
                   <Upload className='h-12 w-12 text-gray-400 mx-auto mb-4' />
                   <p className='text-lg font-medium text-gray-700 mb-2'>
-                    Clique para selecionar imagens
+                    {uploading
+                      ? 'Enviando...'
+                      : 'Clique para selecionar imagens'}
                   </p>
                   <p className='text-sm text-gray-500'>
-                    ou arraste e solte aqui (máximo 10 imagens)
+                    {uploading
+                      ? 'Aguarde enquanto processamos suas imagens'
+                      : 'ou arraste e solte aqui (máximo 10 imagens)'}
                   </p>
                 </div>
               </label>

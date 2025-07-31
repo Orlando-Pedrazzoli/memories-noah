@@ -16,11 +16,11 @@ const Sidebar = () => {
     { value: '3-years', label: '3 anos', icon: '👦' },
     { value: '4-years', label: '4 anos', icon: '🧑' },
     { value: '5-years', label: '5 anos', icon: '👨' },
-    { value: '6-years', label: '6 anos', icon: '🧒‍♂️' },
-    { value: '7-years', label: '7 anos', icon: '👦‍🦱' },
-    { value: '8-years', label: '8 anos', icon: '🧑‍🎓' },
+    { value: '6-years', label: '6 anos', icon: '🧒' },
+    { value: '7-years', label: '7 anos', icon: '👦' },
+    { value: '8-years', label: '8 anos', icon: '🧑' },
     { value: '9-years', label: '9 anos', icon: '👨‍🎓' },
-    { value: '10-years', label: '10 anos', icon: '🧑‍💼' },
+    { value: '10-years', label: '10 anos', icon: '🧑' },
   ];
 
   useEffect(() => {

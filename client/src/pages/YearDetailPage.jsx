@@ -50,6 +50,51 @@ const YearDetailPage = () => {
     }
   };
 
+  // ⭐ NOVA FUNÇÃO: Lidar com imagem deletada
+  const handleImageDeleted = deletedPublicId => {
+    setMemories(prevMemories => ({
+      photos: prevMemories.photos.filter(
+        img => img.public_id !== deletedPublicId
+      ),
+      schoolWork: prevMemories.schoolWork.filter(
+        img => img.public_id !== deletedPublicId
+      ),
+    }));
+
+    // Fechar modal se a imagem deletada era a selecionada
+    if (selectedImage && selectedImage.public_id === deletedPublicId) {
+      setSelectedImage(null);
+    }
+  };
+
+  // ⭐ FUNÇÃO ATUALIZADA: Navegação de imagens com lista atualizada
+  const handleNextImage = () => {
+    const currentImages =
+      activeTab === 'photos' ? memories.photos : memories.schoolWork;
+    const nextIndex = (selectedImage.index + 1) % currentImages.length;
+
+    setSelectedImage({
+      ...currentImages[nextIndex],
+      index: nextIndex,
+      images: currentImages,
+    });
+  };
+
+  const handlePreviousImage = () => {
+    const currentImages =
+      activeTab === 'photos' ? memories.photos : memories.schoolWork;
+    const prevIndex =
+      selectedImage.index === 0
+        ? currentImages.length - 1
+        : selectedImage.index - 1;
+
+    setSelectedImage({
+      ...currentImages[prevIndex],
+      index: prevIndex,
+      images: currentImages,
+    });
+  };
+
   const currentImages =
     activeTab === 'photos' ? memories.photos : memories.schoolWork;
 
@@ -186,26 +231,9 @@ const YearDetailPage = () => {
         <ImageModal
           image={selectedImage}
           onClose={() => setSelectedImage(null)}
-          onNext={() => {
-            const nextIndex =
-              (selectedImage.index + 1) % selectedImage.images.length;
-            setSelectedImage({
-              ...selectedImage.images[nextIndex],
-              index: nextIndex,
-              images: selectedImage.images,
-            });
-          }}
-          onPrevious={() => {
-            const prevIndex =
-              selectedImage.index === 0
-                ? selectedImage.images.length - 1
-                : selectedImage.index - 1;
-            setSelectedImage({
-              ...selectedImage.images[prevIndex],
-              index: prevIndex,
-              images: selectedImage.images,
-            });
-          }}
+          onNext={handleNextImage}
+          onPrevious={handlePreviousImage}
+          onImageDeleted={handleImageDeleted} // ⭐ NOVO: Callback para deletar
         />
       )}
 

@@ -56,20 +56,24 @@ const ImageModal = ({ image, onClose, onNext, onPrevious, onImageDeleted }) => {
 
     try {
       setDeleting(true);
+
+      // ⭐ Excluir da API
       await uploadService.deleteImage(image.public_id);
 
       toast.success('Imagem excluída com sucesso!');
 
-      // Notify parent component about deletion
+      // ⭐ MUDANÇA PRINCIPAL: Notificar o componente pai para atualizar a lista
       if (onImageDeleted) {
         onImageDeleted(image.public_id);
       }
 
-      // Close modal after deletion
+      // ⭐ Fechar modal após exclusão
       onClose();
     } catch (error) {
       console.error('Error deleting image:', error);
-      toast.error('Erro ao excluir imagem');
+      const errorMessage =
+        error.response?.data?.error || 'Erro ao excluir imagem';
+      toast.error(errorMessage);
     } finally {
       setDeleting(false);
       setShowDeleteConfirm(false);
@@ -154,7 +158,7 @@ const ImageModal = ({ image, onClose, onNext, onPrevious, onImageDeleted }) => {
       {/* Footer Info */}
       <div className='absolute bottom-4 left-4 right-4 flex items-center justify-center'>
         <div className='bg-black bg-opacity-50 backdrop-blur-sm rounded-lg px-4 py-2 text-white text-sm'>
-          {image.index + 1} de {image.images.length} imagens
+          {image.index + 1} de {image.images?.length || 1} imagens
         </div>
       </div>
 
@@ -172,7 +176,7 @@ const ImageModal = ({ image, onClose, onNext, onPrevious, onImageDeleted }) => {
                 </h3>
                 <p className='text-sm text-gray-600'>
                   Esta ação não pode ser desfeita. A imagem será removida
-                  permanentemente.
+                  permanentemente do Cloudinary.
                 </p>
               </div>
             </div>
@@ -198,7 +202,7 @@ const ImageModal = ({ image, onClose, onNext, onPrevious, onImageDeleted }) => {
                 ) : (
                   <>
                     <Trash2 className='h-4 w-4' />
-                    <span>Excluir</span>
+                    <span>Excluir Permanentemente</span>
                   </>
                 )}
               </button>

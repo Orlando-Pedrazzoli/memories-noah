@@ -1,28 +1,66 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { memoriesService } from '../../services/api';
-import { Upload, MapPin, Calendar, ImageIcon } from 'lucide-react';
+import { memoriesService, travelService } from '../../services/api';
+import {
+  Upload,
+  MapPin,
+  Calendar,
+  ImageIcon,
+  ArrowRight,
+  Eye,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const Hero = () => {
   const [recentMemories, setRecentMemories] = useState([]);
+  const [stats, setStats] = useState({
+    totalPhotos: 0,
+    totalTravels: 0,
+    loading: true,
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadRecentMemories();
+    loadData();
   }, []);
 
-  const loadRecentMemories = async () => {
+  const loadData = async () => {
     try {
-      const response = await memoriesService.getRecentMemories();
-      if (response.success) {
-        setRecentMemories(response.recentMemories.slice(0, 6));
+      // Carregar dados em paralelo
+      const [memoriesResponse, travelsResponse] = await Promise.all([
+        memoriesService.getRecentMemories(),
+        travelService.getAllTravels(),
+      ]);
+
+      // Processar memórias recentes
+      if (memoriesResponse.success) {
+        const memories = memoriesResponse.recentMemories || [];
+        setRecentMemories(memories.slice(0, 8));
+
+        // Contar total de fotos
+        setStats(prev => ({
+          ...prev,
+          totalPhotos: memories.length,
+        }));
+      }
+
+      // Processar viagens
+      if (travelsResponse.success) {
+        const travels = travelsResponse.travels || [];
+        setStats(prev => ({
+          ...prev,
+          totalTravels: travels.length,
+        }));
       }
     } catch (error) {
-      console.error('Error loading recent memories:', error);
-      toast.error('Erro ao carregar memórias recentes');
+      console.error('Error loading data:', error);
+      toast.error('Erro ao carregar dados');
     } finally {
       setLoading(false);
+      setStats(prev => ({
+        ...prev,
+        loading: false,
+      }));
     }
   };
 
@@ -46,7 +84,7 @@ const Hero = () => {
           <div className='flex flex-col sm:flex-row gap-4 justify-center items-center'>
             <Link
               to='/upload'
-              className='btn-primary flex items-center space-x-2 px-6 py-3 text-lg'
+              className='btn-primary flex items-center space-x-2 px-6 py-3 text-lg hover:scale-105 transition-transform duration-200'
             >
               <Upload className='h-5 w-5' />
               <span>Adicionar Memórias</span>
@@ -54,7 +92,7 @@ const Hero = () => {
 
             <Link
               to='/travels'
-              className='btn-secondary flex items-center space-x-2 px-6 py-3 text-lg'
+              className='btn-secondary flex items-center space-x-2 px-6 py-3 text-lg hover:scale-105 transition-transform duration-200'
             >
               <MapPin className='h-5 w-5' />
               <span>Nossas Viagens</span>
@@ -76,10 +114,11 @@ const Hero = () => {
 
             <Link
               to='/year/0-12-months'
-              className='text-primary-600 hover:text-primary-700 font-medium text-sm flex items-center space-x-1 transition-colors duration-200'
+              className='group inline-flex items-center space-x-2 bg-primary-100 hover:bg-primary-200 text-primary-700 hover:text-primary-800 px-4 py-2 rounded-full font-medium text-sm transition-all duration-200 hover:scale-105 shadow-sm hover:shadow-md'
             >
-              <span>Ver todas</span>
-              <ImageIcon className='h-4 w-4' />
+              <Eye className='h-4 w-4' />
+              <span>Ver todas as fotos</span>
+              <ArrowRight className='h-4 w-4 group-hover:translate-x-1 transition-transform duration-200' />
             </Link>
           </div>
 
@@ -131,7 +170,7 @@ const Hero = () => {
               </p>
               <Link
                 to='/upload'
-                className='btn-primary inline-flex items-center space-x-2'
+                className='btn-primary inline-flex items-center space-x-2 hover:scale-105 transition-transform duration-200'
               >
                 <Upload className='h-4 w-4' />
                 <span>Adicionar Primeira Memória</span>
@@ -144,30 +183,42 @@ const Hero = () => {
       {/* Statistics Cards */}
       <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16'>
         <div className='grid grid-cols-1 md:grid-cols-3 gap-6'>
-          <div className='bg-white rounded-xl shadow-md p-6 text-center'>
+          <div className='bg-white rounded-xl shadow-md p-6 text-center hover:shadow-lg transition-shadow duration-200'>
             <div className='bg-primary-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4'>
               <ImageIcon className='h-6 w-6 text-primary-600' />
             </div>
             <h3 className='text-2xl font-bold text-gray-900 mb-2'>
-              {recentMemories.length > 0 ? '100+' : '0'}
+              {stats.loading ? (
+                <div className='animate-pulse bg-gray-200 h-8 w-16 rounded mx-auto'></div>
+              ) : stats.totalPhotos > 0 ? (
+                `${stats.totalPhotos}+`
+              ) : (
+                '0'
+              )}
             </h3>
             <p className='text-gray-600'>Fotos Guardadas</p>
           </div>
 
-          <div className='bg-white rounded-xl shadow-md p-6 text-center'>
+          <div className='bg-white rounded-xl shadow-md p-6 text-center hover:shadow-lg transition-shadow duration-200'>
             <div className='bg-secondary-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4'>
               <Calendar className='h-6 w-6 text-secondary-600' />
             </div>
-            <h3 className='text-2xl font-bold text-gray-900 mb-2'>11</h3>
-            <p className='text-gray-600'>Períodos da Vida</p>
+            <h3 className='text-2xl font-bold text-gray-900 mb-2'>
+              {new Date().getFullYear() - 2023}
+            </h3>
+            <p className='text-gray-600'>Anos de Vida</p>
           </div>
 
-          <div className='bg-white rounded-xl shadow-md p-6 text-center'>
+          <div className='bg-white rounded-xl shadow-md p-6 text-center hover:shadow-lg transition-shadow duration-200'>
             <div className='bg-green-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4'>
               <MapPin className='h-6 w-6 text-green-600' />
             </div>
             <h3 className='text-2xl font-bold text-gray-900 mb-2'>
-              {recentMemories.length > 0 ? '5+' : '0'}
+              {stats.loading ? (
+                <div className='animate-pulse bg-gray-200 h-8 w-16 rounded mx-auto'></div>
+              ) : (
+                stats.totalTravels
+              )}
             </h3>
             <p className='text-gray-600'>Viagens Registradas</p>
           </div>
