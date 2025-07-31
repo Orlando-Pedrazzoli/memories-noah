@@ -27,7 +27,70 @@ const upload = multer({
   },
 });
 
-// Upload memories (photos/school work)
+// ⭐ FUNÇÃO AUXILIAR: Criar marker de viagem
+const createTravelMarker = async (travelData, authHeader) => {
+  try {
+    const { folderName, travelName, location, date } = travelData;
+
+    console.log('🗺️ Creating travel marker for:', folderName);
+
+    const markerData = {
+      travelId: folderName,
+      name: travelName,
+      location,
+      date,
+    };
+
+    // Fazer chamada interna para o endpoint de markers
+    const baseUrl = process.env.API_BASE_URL || 'http://localhost:3001';
+    const response = await fetch(`${baseUrl}/api/travel/markers`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: authHeader,
+      },
+      body: JSON.stringify(markerData),
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log(
+        '✅ Travel marker created:',
+        result.hasCoordinates ? 'with coordinates' : 'without coordinates'
+      );
+      return result;
+    }
+  } catch (err) {
+    console.error('⚠️ Failed to create travel marker:', err.message);
+  }
+  return null;
+};
+
+// ⭐ FUNÇÃO AUXILIAR: Atualizar contagem de imagens
+const updateImageCount = async (travelId, imageCount, authHeader) => {
+  try {
+    const baseUrl = process.env.API_BASE_URL || 'http://localhost:3001';
+    const response = await fetch(
+      `${baseUrl}/api/travel/markers/${travelId}/count`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: authHeader,
+        },
+        body: JSON.stringify({ imageCount }),
+      }
+    );
+
+    if (response.ok) {
+      console.log('✅ Updated image count for:', travelId);
+    }
+  } catch (err) {
+    console.error('⚠️ Failed to update image count:', err.message);
+  }
+};
+
+// Upload memories (photos/school work) - INALTERADO
 router.post(
   '/memories',
   authenticateToken,
@@ -81,26 +144,35 @@ router.post(
   }
 );
 
-// Upload travel photos
+// ⭐ ATUALIZADO: Upload travel photos com criação automática de marker
 router.post(
   '/travel',
   authenticateToken,
   upload.array('images', 20),
   async (req, res) => {
     try {
-      const { travelName, location, date, description } = req.body;
+      const { travelName, location, date, description, latitude, longitude } =
+        req.body;
 
       if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: 'No images provided' });
       }
 
+      const folderName = travelName.replace(/\s+/g, '-').toLowerCase();
+
+      console.log('🚀 Uploading travel:', {
+        travelName,
+        location,
+        folderName,
+        imageCount: req.files.length,
+        hasCoordinates: !!(latitude && longitude),
+      });
+
       const uploadPromises = req.files.map(file => {
         return new Promise((resolve, reject) => {
           const uploadStream = cloudinary.uploader.upload_stream(
             {
-              folder: `travels/${travelName
-                .replace(/\s+/g, '-')
-                .toLowerCase()}`,
+              folder: `travels/${folderName}`,
               resource_type: 'image',
               transformation: [
                 { width: 1200, height: 1200, crop: 'limit', quality: 'auto' },
@@ -125,7 +197,29 @@ router.post(
         format: result.format,
       }));
 
-      res.json({
+      console.log('✅ Images uploaded successfully:', images.length);
+
+      // ⭐ NOVO: Criar marker de viagem automaticamente
+      const markerResult = await createTravelMarker(
+        {
+          folderName,
+          travelName,
+          location,
+          date,
+        },
+        req.headers.authorization
+      );
+
+      // ⭐ NOVO: Atualizar contagem de imagens
+      if (markerResult) {
+        await updateImageCount(
+          folderName,
+          images.length,
+          req.headers.authorization
+        );
+      }
+
+      const responseData = {
         success: true,
         travel: {
           name: travelName,
@@ -133,17 +227,29 @@ router.post(
           date,
           description,
           images,
+          folder: folderName,
         },
         message: `Travel album "${travelName}" created with ${images.length} images`,
-      });
+      };
+
+      // ⭐ ADICIONAR informação sobre o marker se foi criado
+      if (markerResult) {
+        responseData.marker = {
+          created: true,
+          hasCoordinates: markerResult.hasCoordinates || false,
+          location: location,
+        };
+      }
+
+      res.json(responseData);
     } catch (error) {
-      console.error('Travel upload error:', error);
+      console.error('❌ Travel upload error:', error);
       res.status(500).json({ error: 'Failed to upload travel images' });
     }
   }
 );
 
-// Delete image
+// Delete image - INALTERADO
 router.delete('/image/:publicId', authenticateToken, async (req, res) => {
   try {
     const { publicId } = req.params;

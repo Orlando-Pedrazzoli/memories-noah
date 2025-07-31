@@ -1,9 +1,12 @@
+// client/src/pages/UploadPage.jsx - VERSÃO ATUALIZADA
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { uploadService } from '../services/api';
 import Navbar from '../components/layout/Navbar';
 import Footer from '../components/layout/Footer';
+import LocationPicker from '../components/travel/LocationPicker'; // 🆕 NOVO IMPORT
 import {
   Upload,
   ImageIcon,
@@ -19,7 +22,7 @@ const UploadPage = () => {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
   const [uploading, setUploading] = useState(false);
-  const [uploadType, setUploadType] = useState('memories'); // 'memories' or 'travel'
+  const [uploadType, setUploadType] = useState('memories');
 
   const {
     register,
@@ -27,9 +30,11 @@ const UploadPage = () => {
     formState: { errors },
     reset,
     watch,
+    setValue, // 🆕 ADICIONAR setValue para o LocationPicker
   } = useForm();
 
   const watchedCategory = watch('category');
+  const watchedLocation = watch('location'); // 🆕 WATCH para location
 
   const yearOptions = [
     { value: '0-12-months', label: '0-12 meses' },
@@ -48,14 +53,15 @@ const UploadPage = () => {
   const handleFileSelection = e => {
     const files = Array.from(e.target.files);
 
-    if (files.length > 10) {
-      toast.error('Máximo de 10 imagens por vez');
+    if (files.length > (uploadType === 'travel' ? 20 : 10)) {
+      toast.error(
+        `Máximo de ${uploadType === 'travel' ? 20 : 10} imagens por vez`
+      );
       return;
     }
 
     setSelectedFiles(files);
 
-    // Create previews
     const newPreviews = files.map(file => ({
       file,
       url: URL.createObjectURL(file),
@@ -69,7 +75,6 @@ const UploadPage = () => {
     const newFiles = selectedFiles.filter((_, i) => i !== index);
     const newPreviews = previews.filter((_, i) => i !== index);
 
-    // Clean up URL
     URL.revokeObjectURL(previews[index].url);
 
     setSelectedFiles(newFiles);
@@ -103,21 +108,27 @@ const UploadPage = () => {
             `${response.images.length} imagens enviadas com sucesso!`
           );
 
-          // ⭐ REDIRECIONAR para a página do ano específico
           setTimeout(() => {
             navigate(`/year/${data.year}`, {
               replace: true,
-              state: { fromUpload: true }, // Para forçar reload se necessário
+              state: { fromUpload: true },
             });
-          }, 1500); // Delay para mostrar o toast
+          }, 1500);
 
           resetForm();
         }
       } else {
+        // 🆕 UPLOAD DE VIAGEM COM COORDENADAS
         formData.append('travelName', data.travelName);
         formData.append('location', data.location);
         formData.append('date', data.date);
         formData.append('description', data.description || '');
+
+        // 🆕 Se houver coordenadas salvas, incluir
+        if (window.selectedLocationCoords) {
+          formData.append('latitude', window.selectedLocationCoords.lat);
+          formData.append('longitude', window.selectedLocationCoords.lon);
+        }
 
         const response = await uploadService.uploadTravel(formData);
 
@@ -126,13 +137,45 @@ const UploadPage = () => {
             `Álbum de viagem "${data.travelName}" criado com sucesso!`
           );
 
-          // ⭐ REDIRECIONAR para a página de viagens
+          // 🆕 CRIAR MARKER NO BACKEND (se as coordenadas existirem)
+          if (window.selectedLocationCoords) {
+            try {
+              const markerData = {
+                travelId: response.travel.folder,
+                name: data.travelName,
+                location: data.location,
+                date: data.date,
+                coordinates: [
+                  window.selectedLocationCoords.lat,
+                  window.selectedLocationCoords.lon,
+                ],
+              };
+
+              // Fazer chamada para criar marker (assumindo que você tenha um endpoint)
+              const token = localStorage.getItem('token');
+              await fetch('/api/travel/markers', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify(markerData),
+              });
+
+              // Limpar coordenadas temporárias
+              delete window.selectedLocationCoords;
+            } catch (markerError) {
+              console.error('Erro ao criar marker:', markerError);
+              // Não falhar o upload por causa do marker
+            }
+          }
+
           setTimeout(() => {
             navigate('/travels', {
               replace: true,
-              state: { fromUpload: true }, // Para forçar reload se necessário
+              state: { fromUpload: true },
             });
-          }, 1500); // Delay para mostrar o toast
+          }, 1500);
 
           resetForm();
         }
@@ -140,7 +183,7 @@ const UploadPage = () => {
     } catch (error) {
       console.error('Upload error:', error);
       toast.error('Erro ao enviar imagens');
-      setUploading(false); // Só para erro, no sucesso o componente será desmontado
+      setUploading(false);
     }
   };
 
@@ -149,6 +192,8 @@ const UploadPage = () => {
     setSelectedFiles([]);
     previews.forEach(preview => URL.revokeObjectURL(preview.url));
     setPreviews([]);
+    // 🆕 Limpar coordenadas ao resetar
+    delete window.selectedLocationCoords;
   };
 
   return (
@@ -301,26 +346,24 @@ const UploadPage = () => {
                     )}
                   </div>
 
+                  {/* 🆕 USAR LOCATIONPICKER EM VEZ DE INPUT SIMPLES */}
                   <div>
                     <label className='block text-sm font-medium text-gray-700 mb-2'>
                       Localização *
                     </label>
+                    <LocationPicker
+                      value={watchedLocation || ''}
+                      onChange={value => setValue('location', value)}
+                      disabled={uploading}
+                      error={errors.location?.message}
+                    />
+                    {/* Registrar o campo para validação */}
                     <input
                       {...register('location', {
                         required: 'Localização é obrigatória',
                       })}
-                      type='text'
-                      className={`input-field ${
-                        errors.location ? 'border-red-500' : ''
-                      }`}
-                      placeholder='Ex: Paris, França'
-                      disabled={uploading}
+                      type='hidden'
                     />
-                    {errors.location && (
-                      <p className='mt-1 text-sm text-red-600'>
-                        {errors.location.message}
-                      </p>
-                    )}
                   </div>
 
                   <div>
@@ -391,7 +434,9 @@ const UploadPage = () => {
                   <p className='text-sm text-gray-500'>
                     {uploading
                       ? 'Aguarde enquanto processamos suas imagens'
-                      : 'ou arraste e solte aqui (máximo 10 imagens)'}
+                      : `ou arraste e solte aqui (máximo ${
+                          uploadType === 'travel' ? 20 : 10
+                        } imagens)`}
                   </p>
                 </div>
               </label>
