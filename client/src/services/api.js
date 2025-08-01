@@ -21,10 +21,18 @@ api.interceptors.request.use(
     );
     console.log('📋 Dados:', config.data);
 
+    // ⭐ VERIFICAÇÃO MELHORADA DO TOKEN
     const token = Cookies.get('memory-token');
+    console.log('🔑 Token encontrado:', token ? 'SIM' : 'NÃO');
+    console.log('🍪 Todos os cookies:', document.cookie);
+
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('✅ Authorization header adicionado');
+    } else {
+      console.warn('⚠️ Nenhum token encontrado - requisição sem autenticação');
     }
+
     return config;
   },
   error => {
@@ -126,8 +134,9 @@ export const memoriesService = {
   },
 };
 
-// Travel services
+// ⭐ TRAVEL SERVICES - UNIFICADO E COMPLETO
 export const travelService = {
+  // Métodos básicos
   getAllTravels: async () => {
     const response = await api.get('/travel');
     return response.data;
@@ -145,6 +154,49 @@ export const travelService = {
 
   saveTravelMarker: async markerData => {
     const response = await api.post('/travel/markers', markerData);
+    return response.data;
+  },
+
+  // ⭐ NOVOS MÉTODOS PARA EXCLUSÃO
+  getTravelStats: async travelId => {
+    console.log('📊 Buscando estatísticas para:', travelId);
+    const response = await api.get(`/travel/${travelId}/stats`);
+    return response.data;
+  },
+
+  deleteTravelAlbum: async travelId => {
+    console.log('🗑️ travelService.deleteTravelAlbum chamado para:', travelId);
+
+    try {
+      const response = await api.delete(`/travel/${travelId}`);
+      console.log('✅ Resposta da API recebida:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro na chamada da API:', error);
+      console.error('❌ Response data:', error.response?.data);
+      console.error('❌ Status:', error.response?.status);
+
+      // Re-throw para o componente lidar com o erro
+      throw error;
+    }
+  },
+
+  deleteTravelMarker: async travelId => {
+    console.log('🗺️ Deletando apenas marker:', travelId);
+    const response = await api.delete(`/travel/markers/${travelId}`);
+    return response.data;
+  },
+
+  // ⭐ NOVO: Geocoding auxiliar
+  geocodeLocation: async location => {
+    console.log('🌍 Geocodificando:', location);
+    const response = await api.post('/travel/geocode', { location });
+    return response.data;
+  },
+
+  // ⭐ NOVO: Debug markers (desenvolvimento)
+  getDebugMarkers: async () => {
+    const response = await api.get('/travel/debug/markers');
     return response.data;
   },
 };
