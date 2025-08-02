@@ -137,24 +137,35 @@ const TravelsPage = () => {
     });
   };
 
-  // ⭐ HANDLER PARA EXCLUSÃO DE ÁLBUM
+  // ⭐ HANDLER MELHORADO PARA EXCLUSÃO DE ÁLBUM
   const handleTravelDeleted = deletedTravelId => {
     console.log('🗑️ Álbum deletado:', deletedTravelId);
 
     // Remover da lista de travels
-    setTravels(prevTravels =>
-      prevTravels.filter(travel => travel.id !== deletedTravelId)
-    );
+    setTravels(prevTravels => {
+      const updated = prevTravels.filter(
+        travel => travel.id !== deletedTravelId
+      );
+      console.log('📋 Travels atualizados:', updated.length, 'restantes');
+      return updated;
+    });
 
     // Remover da lista de markers
-    setMarkers(prevMarkers =>
-      prevMarkers.filter(marker => marker.travelId !== deletedTravelId)
-    );
+    setMarkers(prevMarkers => {
+      const updated = prevMarkers.filter(
+        marker => marker.travelId !== deletedTravelId
+      );
+      console.log('🗺️ Markers atualizados:', updated.length, 'restantes');
+      return updated;
+    });
 
     // Atualizar debug info
-    setDebugInfo('✅ Álbum excluído e listas atualizadas');
+    setDebugInfo('✅ Álbum excluído - interface atualizada');
 
-    toast.success('Página atualizada após exclusão do álbum');
+    // Toast de confirmação
+    toast.success('Álbum removido da interface com sucesso!', {
+      duration: 3000,
+    });
   };
 
   const handleMarkerClick = async marker => {
@@ -244,9 +255,11 @@ const TravelsPage = () => {
                     Mapa Mundial
                   </h2>
                   <p className='text-sm text-gray-600'>
-                    Clique nos marcadores para ver o álbum da viagem •
-                    {validMarkers.length} de {markers.length} viagem(ns) no mapa
-                    • 🟢 Brasil 🔴 Portugal 🔵 França 🟠 Espanha
+                    Clique nos marcadores para ver o álbum da viagem
+                    {validMarkers.length > 0 &&
+                      ` • ${validMarkers.length} ${
+                        validMarkers.length === 1 ? 'marcador' : 'marcadores'
+                      } no mapa`}
                   </p>
                 </div>
 
@@ -263,127 +276,136 @@ const TravelsPage = () => {
                       url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
                     />
 
-                    {/* ⭐ RENDERIZAR MARKERS VÁLIDOS */}
-                    {validMarkers.map(marker => {
-                      console.log(
-                        '🔍 Rendering marker:',
-                        marker.name,
-                        marker.coordinates
-                      );
+                    {/* ⭐ RENDERIZAR MARKERS APENAS QUANDO EXISTEM */}
+                    {validMarkers.length > 0 ? (
+                      validMarkers.map(marker => {
+                        console.log(
+                          '🔍 Rendering marker:',
+                          marker.name,
+                          marker.coordinates
+                        );
 
-                      return (
-                        <Marker
-                          key={marker.id}
-                          position={marker.coordinates}
-                          icon={createCustomIcon(
-                            getMarkerColor(marker.location)
-                          )}
-                          eventHandlers={{
-                            click: () => handleMarkerClick(marker),
-                          }}
-                        >
-                          <Popup maxWidth={250}>
-                            <div className='text-center'>
-                              <h3 className='font-semibold text-gray-900 mb-2 text-base'>
-                                {marker.name}
-                              </h3>
-                              <p className='text-sm text-gray-600 mb-2'>
-                                📍 {marker.location}
-                              </p>
-                              <p className='text-sm text-gray-600 mb-2'>
-                                📅{' '}
-                                {new Date(marker.date).toLocaleDateString(
-                                  'pt-BR'
-                                )}
-                              </p>
-                              <p className='text-xs text-gray-500 mb-3'>
-                                📸 {marker.imageCount} foto
-                                {marker.imageCount !== 1 ? 's' : ''}
-                              </p>
-                              <button
-                                className='w-full bg-primary-600 text-white px-3 py-2 rounded-md text-sm hover:bg-primary-700 transition-colors'
-                                onClick={() => handleMarkerClick(marker)}
-                              >
-                                Ver Álbum 🖼️
-                              </button>
-                            </div>
-                          </Popup>
-                        </Marker>
-                      );
-                    })}
+                        return (
+                          <Marker
+                            key={marker.id}
+                            position={marker.coordinates}
+                            icon={createCustomIcon('red')} // ⭐ USAR SEMPRE VERMELHO
+                            eventHandlers={{
+                              click: () => handleMarkerClick(marker),
+                            }}
+                          >
+                            <Popup maxWidth={250}>
+                              <div className='text-center'>
+                                <h3 className='font-semibold text-gray-900 mb-2 text-base'>
+                                  {marker.name}
+                                </h3>
+                                <p className='text-sm text-gray-600 mb-2'>
+                                  📍 {marker.location}
+                                </p>
+                                <p className='text-sm text-gray-600 mb-2'>
+                                  📅{' '}
+                                  {new Date(marker.date).toLocaleDateString(
+                                    'pt-BR'
+                                  )}
+                                </p>
+                                <p className='text-xs text-gray-500 mb-3'>
+                                  📸 {marker.imageCount} foto
+                                  {marker.imageCount !== 1 ? 's' : ''}
+                                </p>
+                                <button
+                                  className='w-full bg-primary-600 text-white px-3 py-2 rounded-md text-sm hover:bg-primary-700 transition-colors'
+                                  onClick={() => handleMarkerClick(marker)}
+                                >
+                                  Ver Álbum 🖼️
+                                </button>
+                              </div>
+                            </Popup>
+                          </Marker>
+                        );
+                      })
+                    ) : (
+                      // ⭐ MENSAGEM QUANDO NÃO HÁ MARKERS
+                      <div style={{ display: 'none' }}></div>
+                    )}
                   </MapContainer>
                 </div>
 
-                {/* ⭐ INFO DE DEBUG MELHORADA */}
-                <div className='p-4 bg-gray-50 border-t border-gray-200'>
-                  <div className='grid grid-cols-2 md:grid-cols-4 gap-4 text-sm'>
-                    <div>
-                      <span className='font-medium text-gray-900'>Total:</span>
-                      <span className='ml-1 text-gray-600'>
-                        {markers.length}
-                      </span>
-                    </div>
-                    <div>
-                      <span className='font-medium text-gray-900'>
-                        No mapa:
-                      </span>
-                      <span className='ml-1 text-green-600'>
-                        {validMarkers.length}
-                      </span>
-                    </div>
-                    <div>
-                      <span className='font-medium text-gray-900'>
-                        Sem coordenadas:
-                      </span>
-                      <span className='ml-1 text-orange-600'>
-                        {markers.length - validMarkers.length}
-                      </span>
-                    </div>
-                    <div>
-                      <span className='font-medium text-gray-900'>Países:</span>
-                      <span className='ml-1 text-blue-600'>
-                        {
-                          new Set(
-                            validMarkers
-                              .map(m => m.location?.split(',').pop()?.trim())
-                              .filter(Boolean)
-                          ).size
-                        }
-                      </span>
-                    </div>
+                {/* ⭐ INFO DE STATUS - APENAS QUANDO RELEVANTE */}
+                {markers.length === 0 ? (
+                  <div className='p-4 bg-blue-50 border-t border-blue-200'>
+                    <p className='text-sm text-blue-800 text-center'>
+                      ℹ️ Nenhuma viagem adicionada ainda. Crie sua primeira
+                      viagem para ver no mapa!
+                    </p>
                   </div>
-
-                  {/* ⭐ LISTA DE MARKERS PARA DEBUG */}
-                  {process.env.NODE_ENV === 'development' && (
-                    <details className='mt-3'>
-                      <summary className='text-xs text-gray-500 cursor-pointer hover:text-gray-700'>
-                        🔍 Debug: Ver todos os markers
-                      </summary>
-                      <div className='mt-2 text-xs text-gray-600 bg-white p-2 rounded border max-h-32 overflow-y-auto'>
-                        {markers.map(marker => (
-                          <div key={marker.id} className='mb-1'>
-                            <span
-                              className={
-                                marker.coordinates
-                                  ? 'text-green-600'
-                                  : 'text-red-600'
-                              }
-                            >
-                              {marker.coordinates ? '✅' : '❌'}
-                            </span>
-                            <span className='ml-1'>{marker.name}</span>
-                            {marker.coordinates && (
-                              <span className='text-gray-400 ml-1'>
-                                [{marker.coordinates[0]},{' '}
-                                {marker.coordinates[1]}]
-                              </span>
-                            )}
-                          </div>
-                        ))}
+                ) : (
+                  <div className='p-4 bg-gray-50 border-t border-gray-200'>
+                    <div className='grid grid-cols-2 md:grid-cols-3 gap-4 text-sm'>
+                      <div>
+                        <span className='font-medium text-gray-900'>
+                          Total:
+                        </span>
+                        <span className='ml-1 text-gray-600'>
+                          {markers.length}
+                        </span>
                       </div>
-                    </details>
-                  )}
-                </div>
+                      <div>
+                        <span className='font-medium text-gray-900'>
+                          No mapa:
+                        </span>
+                        <span className='ml-1 text-green-600'>
+                          {validMarkers.length}
+                        </span>
+                      </div>
+                      <div>
+                        <span className='font-medium text-gray-900'>
+                          Países:
+                        </span>
+                        <span className='ml-1 text-blue-600'>
+                          {
+                            new Set(
+                              validMarkers
+                                .map(m => m.location?.split(',').pop()?.trim())
+                                .filter(Boolean)
+                            ).size
+                          }
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* ⭐ LISTA DE MARKERS PARA DEBUG - SÓ SE HOUVER MARKERS */}
+                    {process.env.NODE_ENV === 'development' &&
+                      markers.length > 0 && (
+                        <details className='mt-3'>
+                          <summary className='text-xs text-gray-500 cursor-pointer hover:text-gray-700'>
+                            🔍 Debug: Ver todos os markers ({markers.length})
+                          </summary>
+                          <div className='mt-2 text-xs text-gray-600 bg-white p-2 rounded border max-h-32 overflow-y-auto'>
+                            {markers.map(marker => (
+                              <div key={marker.id} className='mb-1'>
+                                <span
+                                  className={
+                                    marker.coordinates
+                                      ? 'text-green-600'
+                                      : 'text-red-600'
+                                  }
+                                >
+                                  {marker.coordinates ? '✅' : '❌'}
+                                </span>
+                                <span className='ml-1'>{marker.name}</span>
+                                {marker.coordinates && (
+                                  <span className='text-gray-400 ml-1'>
+                                    [{marker.coordinates[0]},{' '}
+                                    {marker.coordinates[1]}]
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -463,11 +485,14 @@ const TravelsPage = () => {
                       Nenhuma viagem ainda
                     </h3>
                     <p className='text-gray-600 mb-4'>
-                      Adicione o primeiro álbum de viagem
+                      Crie seu primeiro álbum de viagem para aparecer no mapa
                     </p>
-                    <button className='btn-primary text-sm'>
-                      Adicionar Viagem
-                    </button>
+                    <a
+                      href='/upload'
+                      className='inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors text-sm'
+                    >
+                      Adicionar Primeira Viagem
+                    </a>
                   </div>
                 )}
               </div>

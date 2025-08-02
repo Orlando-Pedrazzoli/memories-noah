@@ -12,18 +12,8 @@ const geocoder = NodeGeocoder({
 });
 
 // Mock database - em produção, use um banco real
-// Inicializar com os dados existentes
-let travelMarkers = [
-  {
-    id: 'primeiro-ano-em-portugal',
-    name: 'Portugal',
-    coordinates: [39.3999, -8.2245],
-    travelId: 'primeiro-ano-em-portugal',
-    date: '2025-01-01',
-    imageCount: 25,
-    location: 'Portugal',
-  },
-];
+// ⭐ INICIAR VAZIO - SEM MARKERS PRÉ-DEFINIDOS
+let travelMarkers = [];
 
 // ⭐ ENDPOINTS ESPECÍFICOS PRIMEIRO (antes dos genéricos com :travelId)
 
