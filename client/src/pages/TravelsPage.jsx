@@ -1,10 +1,19 @@
-import React, { useState, useEffect } from 'react';
+// client/src/pages/TravelsPage.jsx - VERSÃO CORRIGIDA
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import { travelService } from '../services/api';
 import Navbar from '../components/layout/Navbar';
 import Footer from '../components/layout/Footer';
 import TravelAlbum from '../components/travel/TravelAlbum';
-import { MapPin, ImageIcon, Calendar, Loader2, RefreshCw } from 'lucide-react';
+import {
+  MapPin,
+  ImageIcon,
+  Calendar,
+  Loader2,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import 'leaflet/dist/leaflet.css';
 
@@ -24,7 +33,6 @@ L.Icon.Default.mergeOptions({
     'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// ⭐ CRIAR DIFERENTES ÍCONES PARA DIFERENTES PAÍSES
 const createCustomIcon = (color = 'red') => {
   const colors = {
     red: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
@@ -46,22 +54,6 @@ const createCustomIcon = (color = 'red') => {
   });
 };
 
-// ⭐ FUNÇÃO PARA ESCOLHER COR DO MARKER BASEADO NO PAÍS
-const getMarkerColor = location => {
-  if (!location) return 'red';
-
-  const locationLower = location.toLowerCase();
-  if (locationLower.includes('brasil') || locationLower.includes('brazil'))
-    return 'green';
-  if (locationLower.includes('portugal')) return 'red';
-  if (locationLower.includes('frança') || locationLower.includes('france'))
-    return 'blue';
-  if (locationLower.includes('espanha') || locationLower.includes('spain'))
-    return 'orange';
-
-  return 'red'; // default
-};
-
 const TravelsPage = () => {
   const [travels, setTravels] = useState([]);
   const [markers, setMarkers] = useState([]);
@@ -69,14 +61,17 @@ const TravelsPage = () => {
   const [loading, setLoading] = useState(true);
   const [showAlbum, setShowAlbum] = useState(false);
   const [debugInfo, setDebugInfo] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadTravelsData();
-  }, []);
-
-  const loadTravelsData = async () => {
+  // ⭐ USAR useCallback PARA FUNÇÃO DE CARREGAMENTO
+  const loadTravelsData = useCallback(async (showToast = false) => {
     try {
-      setLoading(true);
+      if (showToast) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
       setDebugInfo('🗺️ Carregando dados...');
 
       console.log('🗺️ Loading travels data...');
@@ -89,13 +84,14 @@ const TravelsPage = () => {
 
       if (travelsResponse.success) {
         console.log('✅ Travels loaded:', travelsResponse.travels.length);
-        console.log('📋 Travels data:', travelsResponse.travels);
         setTravels(travelsResponse.travels);
+      } else {
+        console.error('❌ Failed to load travels:', travelsResponse);
+        setTravels([]);
       }
 
       if (markersResponse.success) {
         console.log('✅ Markers loaded:', markersResponse.markers.length);
-        console.log('📍 Markers data:', markersResponse.markers);
         setMarkers(markersResponse.markers);
 
         // ⭐ DEBUG: Verificar coordenadas
@@ -118,55 +114,112 @@ const TravelsPage = () => {
             markersResponse.markers.filter(m => !validMarkers.includes(m))
           );
         }
+      } else {
+        console.error('❌ Failed to load markers:', markersResponse);
+        setMarkers([]);
+      }
+
+      if (showToast) {
+        toast.success('Dados atualizados!');
       }
     } catch (error) {
       console.error('❌ Error loading travels data:', error);
       setDebugInfo('❌ Erro ao carregar dados');
-      toast.error('Erro ao carregar viagens');
+
+      if (showToast) {
+        toast.error('Erro ao recarregar dados');
+      } else {
+        toast.error('Erro ao carregar viagens');
+      }
+
+      // ⭐ GARANTIR QUE OS ARRAYS ESTEJAM SEMPRE DEFINIDOS
+      setTravels([]);
+      setMarkers([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadTravelsData();
+  }, [loadTravelsData]);
 
   // ⭐ FUNÇÃO PARA RECARREGAR DADOS
   const handleRefresh = () => {
-    toast.promise(loadTravelsData(), {
-      loading: 'Recarregando...',
-      success: 'Dados atualizados!',
-      error: 'Erro ao recarregar',
-    });
+    loadTravelsData(true);
+  };
+
+  // ⭐ FUNÇÃO PARA LIMPEZA DE ÁLBUNS ÓRFÃOS (desenvolvimento)
+  const handleCleanupOrphaned = async () => {
+    if (process.env.NODE_ENV === 'production') {
+      toast.error('Função disponível apenas em desenvolvimento');
+      return;
+    }
+
+    try {
+      const response = await travelService.deleteTravelAlbum(
+        'cleanup/orphaned'
+      );
+      if (response.success) {
+        toast.success(
+          `${response.cleanedFolders.length} álbuns órfãos removidos`
+        );
+        loadTravelsData();
+      }
+    } catch (error) {
+      console.error('Erro na limpeza:', error);
+      toast.error('Erro ao limpar álbuns órfãos');
+    }
   };
 
   // ⭐ HANDLER MELHORADO PARA EXCLUSÃO DE ÁLBUM
-  const handleTravelDeleted = deletedTravelId => {
-    console.log('🗑️ Álbum deletado:', deletedTravelId);
+  const handleTravelDeleted = useCallback(
+    (deletedTravelId, details) => {
+      console.log('🗑️ Álbum deletado:', deletedTravelId, details);
 
-    // Remover da lista de travels
-    setTravels(prevTravels => {
-      const updated = prevTravels.filter(
-        travel => travel.id !== deletedTravelId
-      );
-      console.log('📋 Travels atualizados:', updated.length, 'restantes');
-      return updated;
-    });
+      // ⭐ VERIFICAR SE A LIMPEZA FOI COMPLETA
+      if (details?.cleanupComplete) {
+        console.log('✅ Limpeza completa - removendo da interface');
 
-    // Remover da lista de markers
-    setMarkers(prevMarkers => {
-      const updated = prevMarkers.filter(
-        marker => marker.travelId !== deletedTravelId
-      );
-      console.log('🗺️ Markers atualizados:', updated.length, 'restantes');
-      return updated;
-    });
+        // Remover da lista de travels
+        setTravels(prevTravels => {
+          const updated = prevTravels.filter(
+            travel => travel.id !== deletedTravelId
+          );
+          console.log('📋 Travels atualizados:', updated.length, 'restantes');
+          return updated;
+        });
 
-    // Atualizar debug info
-    setDebugInfo('✅ Álbum excluído - interface atualizada');
+        // Remover da lista de markers
+        setMarkers(prevMarkers => {
+          const updated = prevMarkers.filter(
+            marker => marker.travelId !== deletedTravelId
+          );
+          console.log('🗺️ Markers atualizados:', updated.length, 'restantes');
+          return updated;
+        });
 
-    // Toast de confirmação
-    toast.success('Álbum removido da interface com sucesso!', {
-      duration: 3000,
-    });
-  };
+        setDebugInfo('✅ Álbum excluído - interface atualizada');
+        toast.success('Álbum removido completamente!', { duration: 3000 });
+      } else {
+        console.warn(
+          '⚠️ Limpeza incompleta - recarregando dados para sincronizar'
+        );
+        setDebugInfo('⚠️ Limpeza incompleta - recarregando...');
+
+        // ⭐ RECARREGAR DADOS SE A LIMPEZA NÃO FOI COMPLETA
+        setTimeout(() => {
+          loadTravelsData(true);
+        }, 1000);
+
+        toast.warning('Álbum removido - sincronizando interface...', {
+          duration: 3000,
+        });
+      }
+    },
+    [loadTravelsData]
+  );
 
   const handleMarkerClick = async marker => {
     try {
@@ -212,17 +265,33 @@ const TravelsPage = () => {
               </h1>
             </div>
 
-            {/* ⭐ BOTÃO DE REFRESH */}
-            <button
-              onClick={handleRefresh}
-              className='flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors'
-              disabled={loading}
-            >
-              <RefreshCw
-                className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`}
-              />
-              <span className='text-sm'>Atualizar</span>
-            </button>
+            <div className='flex items-center space-x-2'>
+              {/* ⭐ BOTÃO DE LIMPEZA (desenvolvimento) */}
+              {process.env.NODE_ENV === 'development' && (
+                <button
+                  onClick={handleCleanupOrphaned}
+                  className='flex items-center space-x-2 px-3 py-2 bg-orange-100 border border-orange-300 rounded-md hover:bg-orange-200 transition-colors text-sm'
+                  disabled={loading || refreshing}
+                >
+                  <Trash2 className='h-4 w-4' />
+                  <span>Limpar Órfãos</span>
+                </button>
+              )}
+
+              {/* ⭐ BOTÃO DE REFRESH */}
+              <button
+                onClick={handleRefresh}
+                className='flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors'
+                disabled={loading || refreshing}
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`}
+                />
+                <span className='text-sm'>
+                  {refreshing ? 'Atualizando...' : 'Atualizar'}
+                </span>
+              </button>
+            </div>
           </div>
 
           <p className='text-gray-600 mt-2'>
@@ -265,10 +334,10 @@ const TravelsPage = () => {
 
                 <div className='h-96 lg:h-[500px]'>
                   <MapContainer
-                    center={[-15.7801, -47.9292]} // ⭐ CENTRALIZAR NO BRASIL
-                    zoom={3} // ⭐ ZOOM MAIS PRÓXIMO
+                    center={[-15.7801, -47.9292]}
+                    zoom={3}
                     style={{ height: '100%', width: '100%' }}
-                    scrollWheelZoom={true} // ⭐ HABILITAR SCROLL ZOOM
+                    scrollWheelZoom={true}
                     zoomControl={true}
                   >
                     <TileLayer
@@ -277,7 +346,7 @@ const TravelsPage = () => {
                     />
 
                     {/* ⭐ RENDERIZAR MARKERS APENAS QUANDO EXISTEM */}
-                    {validMarkers.length > 0 ? (
+                    {validMarkers.length > 0 &&
                       validMarkers.map(marker => {
                         console.log(
                           '🔍 Rendering marker:',
@@ -289,7 +358,7 @@ const TravelsPage = () => {
                           <Marker
                             key={marker.id}
                             position={marker.coordinates}
-                            icon={createCustomIcon('red')} // ⭐ USAR SEMPRE VERMELHO
+                            icon={createCustomIcon('red')}
                             eventHandlers={{
                               click: () => handleMarkerClick(marker),
                             }}
@@ -322,15 +391,11 @@ const TravelsPage = () => {
                             </Popup>
                           </Marker>
                         );
-                      })
-                    ) : (
-                      // ⭐ MENSAGEM QUANDO NÃO HÁ MARKERS
-                      <div style={{ display: 'none' }}></div>
-                    )}
+                      })}
                   </MapContainer>
                 </div>
 
-                {/* ⭐ INFO DE STATUS - APENAS QUANDO RELEVANTE */}
+                {/* ⭐ INFO DE STATUS */}
                 {markers.length === 0 ? (
                   <div className='p-4 bg-blue-50 border-t border-blue-200'>
                     <p className='text-sm text-blue-800 text-center'>
@@ -372,38 +437,6 @@ const TravelsPage = () => {
                         </span>
                       </div>
                     </div>
-
-                    {/* ⭐ LISTA DE MARKERS PARA DEBUG - SÓ SE HOUVER MARKERS */}
-                    {process.env.NODE_ENV === 'development' &&
-                      markers.length > 0 && (
-                        <details className='mt-3'>
-                          <summary className='text-xs text-gray-500 cursor-pointer hover:text-gray-700'>
-                            🔍 Debug: Ver todos os markers ({markers.length})
-                          </summary>
-                          <div className='mt-2 text-xs text-gray-600 bg-white p-2 rounded border max-h-32 overflow-y-auto'>
-                            {markers.map(marker => (
-                              <div key={marker.id} className='mb-1'>
-                                <span
-                                  className={
-                                    marker.coordinates
-                                      ? 'text-green-600'
-                                      : 'text-red-600'
-                                  }
-                                >
-                                  {marker.coordinates ? '✅' : '❌'}
-                                </span>
-                                <span className='ml-1'>{marker.name}</span>
-                                {marker.coordinates && (
-                                  <span className='text-gray-400 ml-1'>
-                                    [{marker.coordinates[0]},{' '}
-                                    {marker.coordinates[1]}]
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      )}
                   </div>
                 )}
               </div>
@@ -456,7 +489,7 @@ const TravelsPage = () => {
                           )}
                         </div>
 
-                        {/* ⭐ MOSTRAR STATUS DE COORDENADAS */}
+                        {/* ⭐ STATUS DE COORDENADAS */}
                         <div className='flex items-center space-x-2 text-xs'>
                           {travel.coordinates ? (
                             <span className='text-green-600 flex items-center'>
@@ -553,7 +586,7 @@ const TravelsPage = () => {
             setShowAlbum(false);
             setSelectedTravel(null);
           }}
-          onTravelDeleted={handleTravelDeleted} // ⭐ PROP PARA EXCLUSÃO
+          onTravelDeleted={handleTravelDeleted}
         />
       )}
 

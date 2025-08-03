@@ -7,13 +7,15 @@ import {
   Image,
   MapPin,
   Calendar,
+  CheckCircle,
 } from 'lucide-react';
 
 const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(null);
   const [confirmText, setConfirmText] = useState('');
-  const [step, setStep] = useState(1); // 1: info, 2: confirm, 3: deleting
+  const [step, setStep] = useState(1); // 1: info, 2: confirm, 3: deleting, 4: success
+  const [deleteResult, setDeleteResult] = useState(null);
 
   const expectedText = travel.name.toLowerCase().replace(/\s+/g, '');
 
@@ -50,16 +52,15 @@ const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
         });
       });
 
-      // Redirecionar para login
       setTimeout(() => {
         window.location.href = '/login';
       }, 2000);
       return;
     }
 
-    console.log('✅ Token encontrado:', token ? 'presente' : 'ausente');
+    console.log('✅ Token encontrado, prosseguindo com exclusão...');
 
-    setStep(3);
+    setStep(3); // Mostrar loading
     setLoading(true);
 
     try {
@@ -71,12 +72,17 @@ const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
       if (response.success) {
         console.log('✅ Exclusão bem-sucedida:', response.details);
 
-        // Mostrar resultado da exclusão com delay
+        // ⭐ MOSTRAR TELA DE SUCESSO
+        setDeleteResult(response.details);
+        setStep(4);
+        setLoading(false);
+
+        // ⭐ FECHAR MODAL APÓS 3 SEGUNDOS E NOTIFICAR COMPONENTE PAI
         setTimeout(() => {
-          console.log('🔄 Notificando componente pai...');
+          console.log('🔄 Notificando componente pai e fechando modal...');
           onDeleted(travel.id, response.details);
           onClose();
-        }, 2000);
+        }, 3000);
       } else {
         console.error('❌ Resposta de erro do servidor:', response);
         throw new Error(response.error || 'Falha na exclusão');
@@ -86,7 +92,7 @@ const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
       console.error('❌ Error response:', error.response?.data);
       console.error('❌ Error status:', error.response?.status);
 
-      // Voltar para o step 2 e mostrar erro
+      // ⭐ VOLTAR PARA O STEP 2 E MOSTRAR ERRO
       setStep(2);
       setLoading(false);
 
@@ -123,23 +129,53 @@ const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
   const canDelete =
     confirmText.toLowerCase().replace(/\s+/g, '') === expectedText;
 
+  // ⭐ FUNÇÃO PARA FECHAR MODAL IMEDIATAMENTE
+  const handleForceClose = () => {
+    if (step === 3) {
+      // Se estiver deletando, mostrar confirmação
+      const confirmed = window.confirm(
+        'A exclusão está em andamento. Tem certeza que deseja fechar? A operação continuará em segundo plano.'
+      );
+      if (confirmed) {
+        onClose();
+      }
+    } else {
+      onClose();
+    }
+  };
+
   return (
     <div className='fixed inset-0 z-[10001] bg-black bg-opacity-50 flex items-center justify-center p-4'>
       <div className='bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-hidden z-[10002]'>
         {/* Header */}
-        <div className='bg-red-600 text-white p-4'>
+        <div
+          className={`text-white p-4 ${
+            step === 4 ? 'bg-green-600' : 'bg-red-600'
+          }`}
+        >
           <div className='flex items-center justify-between'>
             <div className='flex items-center space-x-2'>
-              <Trash2 className='h-5 w-5' />
+              {step === 4 ? (
+                <CheckCircle className='h-5 w-5' />
+              ) : (
+                <Trash2 className='h-5 w-5' />
+              )}
               <h2 className='text-lg font-semibold'>
-                {step === 3 ? 'Excluindo Álbum...' : 'Excluir Álbum'}
+                {step === 3
+                  ? 'Excluindo Álbum...'
+                  : step === 4
+                  ? 'Álbum Excluído!'
+                  : 'Excluir Álbum'}
               </h2>
             </div>
 
+            {/* ⭐ BOTÃO DE FECHAR SEMPRE VISÍVEL (exceto no loading) */}
             {step !== 3 && (
               <button
-                onClick={onClose}
-                className='p-1 hover:bg-red-700 rounded transition-colors'
+                onClick={handleForceClose}
+                className={`p-1 rounded transition-colors ${
+                  step === 4 ? 'hover:bg-green-700' : 'hover:bg-red-700'
+                }`}
               >
                 <X className='h-4 w-4' />
               </button>
@@ -313,6 +349,42 @@ const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
               <div className='text-xs text-gray-500'>
                 Esta operação pode levar alguns segundos.
               </div>
+            </div>
+          )}
+
+          {/* ⭐ Step 4: Sucesso */}
+          {step === 4 && (
+            <div className='text-center py-8'>
+              <CheckCircle className='h-12 w-12 text-green-600 mx-auto mb-4' />
+              <h3 className='font-medium text-gray-900 mb-2'>
+                Álbum excluído com sucesso!
+              </h3>
+
+              {deleteResult && (
+                <div className='text-sm text-gray-600 mb-4 space-y-1'>
+                  <p>✅ {deleteResult.imagesDeleted} imagens removidas</p>
+                  {deleteResult.markerRemoved && (
+                    <p>✅ Localização removida do mapa</p>
+                  )}
+                  {deleteResult.folderDeleted && (
+                    <p>✅ Pasta limpa do servidor</p>
+                  )}
+                </div>
+              )}
+
+              <div className='text-xs text-gray-500 mb-4'>
+                Fechando automaticamente em 3 segundos...
+              </div>
+
+              <button
+                onClick={() => {
+                  onDeleted(travel.id, deleteResult);
+                  onClose();
+                }}
+                className='px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm'
+              >
+                Fechar Agora
+              </button>
             </div>
           )}
         </div>
