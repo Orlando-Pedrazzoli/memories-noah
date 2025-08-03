@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Trash2,
   AlertTriangle,
@@ -11,17 +12,36 @@ import {
 } from 'lucide-react';
 
 const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(null);
   const [confirmText, setConfirmText] = useState('');
   const [step, setStep] = useState(1); // 1: info, 2: confirm, 3: deleting, 4: success
   const [deleteResult, setDeleteResult] = useState(null);
+  const [countdown, setCountdown] = useState(3);
 
   const expectedText = travel.name.toLowerCase().replace(/\s+/g, '');
 
   useEffect(() => {
     loadStats();
   }, []);
+
+  // ⭐ COUNTDOWN AUTOMÁTICO PARA FECHAMENTO
+  useEffect(() => {
+    let timer;
+    if (step === 4 && countdown > 0) {
+      timer = setTimeout(() => {
+        setCountdown(prev => prev - 1);
+      }, 1000);
+    } else if (step === 4 && countdown === 0) {
+      // ⭐ FECHAR TODOS OS MODAIS E NAVEGAR
+      handleFinalClose();
+    }
+
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [step, countdown]);
 
   const loadStats = async () => {
     try {
@@ -32,6 +52,30 @@ const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
     } catch (error) {
       console.error('Erro ao carregar estatísticas:', error);
     }
+  };
+
+  // ⭐ FUNÇÃO PARA FECHAR DEFINITIVAMENTE E NAVEGAR
+  const handleFinalClose = () => {
+    console.log('🔄 Fechando todos os modais e navegando...');
+
+    // 1. Notificar componente pai sobre a exclusão
+    if (deleteResult) {
+      onDeleted(travel.id, deleteResult);
+    }
+
+    // 2. Fechar modal de exclusão
+    onClose();
+
+    // 3. Pequeno delay para garantir que outros modais fechem
+    setTimeout(() => {
+      // 4. Navegar para página de viagens
+      navigate('/travels', { replace: true });
+
+      // 5. Forçar recarga da página se necessário (para garantir estado limpo)
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
+    }, 100);
   };
 
   const handleDelete = async () => {
@@ -76,13 +120,14 @@ const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
         setDeleteResult(response.details);
         setStep(4);
         setLoading(false);
+        setCountdown(3); // Iniciar countdown
 
-        // ⭐ FECHAR MODAL APÓS 3 SEGUNDOS E NOTIFICAR COMPONENTE PAI
-        setTimeout(() => {
-          console.log('🔄 Notificando componente pai e fechando modal...');
-          onDeleted(travel.id, response.details);
-          onClose();
-        }, 3000);
+        // ⭐ MOSTRAR TOAST DE SUCESSO IMEDIATAMENTE
+        import('react-hot-toast').then(({ default: toast }) => {
+          toast.success(`Álbum "${travel.name}" excluído com sucesso!`, {
+            duration: 4000,
+          });
+        });
       } else {
         console.error('❌ Resposta de erro do servidor:', response);
         throw new Error(response.error || 'Falha na exclusão');
@@ -129,8 +174,8 @@ const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
   const canDelete =
     confirmText.toLowerCase().replace(/\s+/g, '') === expectedText;
 
-  // ⭐ FUNÇÃO PARA FECHAR MODAL IMEDIATAMENTE
-  const handleForceClose = () => {
+  // ⭐ FUNÇÃO PARA FECHAR MODAL (com confirmação se estiver deletando)
+  const handleModalClose = () => {
     if (step === 3) {
       // Se estiver deletando, mostrar confirmação
       const confirmed = window.confirm(
@@ -139,7 +184,11 @@ const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
       if (confirmed) {
         onClose();
       }
+    } else if (step === 4) {
+      // Se estiver no sucesso, fechar definitivamente
+      handleFinalClose();
     } else {
+      // Outros steps, fechar normalmente
       onClose();
     }
   };
@@ -172,7 +221,7 @@ const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
             {/* ⭐ BOTÃO DE FECHAR SEMPRE VISÍVEL (exceto no loading) */}
             {step !== 3 && (
               <button
-                onClick={handleForceClose}
+                onClick={handleModalClose}
                 className={`p-1 rounded transition-colors ${
                   step === 4 ? 'hover:bg-green-700' : 'hover:bg-red-700'
                 }`}
@@ -352,7 +401,7 @@ const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
             </div>
           )}
 
-          {/* ⭐ Step 4: Sucesso */}
+          {/* ⭐ Step 4: Sucesso com Countdown */}
           {step === 4 && (
             <div className='text-center py-8'>
               <CheckCircle className='h-12 w-12 text-green-600 mx-auto mb-4' />
@@ -372,19 +421,28 @@ const DeleteTravelModal = ({ travel, onClose, onDeleted, travelService }) => {
                 </div>
               )}
 
-              <div className='text-xs text-gray-500 mb-4'>
-                Fechando automaticamente em 3 segundos...
+              {/* ⭐ COUNTDOWN VISUAL */}
+              <div className='text-sm text-gray-500 mb-4'>
+                Redirecionando em{' '}
+                <span className='font-bold text-green-600'>{countdown}</span>{' '}
+                segundos...
               </div>
 
-              <button
-                onClick={() => {
-                  onDeleted(travel.id, deleteResult);
-                  onClose();
-                }}
-                className='px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm'
-              >
-                Fechar Agora
-              </button>
+              <div className='space-y-2'>
+                <button
+                  onClick={handleFinalClose}
+                  className='w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm font-medium'
+                >
+                  Ir para Viagens Agora
+                </button>
+
+                <button
+                  onClick={onClose}
+                  className='w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors text-sm'
+                >
+                  Apenas Fechar Modal
+                </button>
+              </div>
             </div>
           )}
         </div>

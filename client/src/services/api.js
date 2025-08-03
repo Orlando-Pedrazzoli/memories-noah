@@ -1,4 +1,4 @@
-// client/src/services/api.js - VERSÃO CORRIGIDA
+// client/src/services/api.js - VERSÃO CORRIGIDA COMPLETA
 
 import axios from 'axios';
 import Cookies from 'js-cookie';
@@ -10,7 +10,7 @@ console.log('🌐 API_URL configurada:', API_URL);
 // Create axios instance
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 30000,
+  timeout: 60000, // ⭐ AUMENTAR TIMEOUT PARA UPLOADS
 });
 
 // Request interceptor to add token
@@ -30,7 +30,7 @@ api.interceptors.request.use(
       console.warn('⚠️ Nenhum token encontrado - requisição sem autenticação');
     }
 
-    // ⭐ ADICIONAR TIMESTAMP PARA EVITAR CACHE
+    // ⭐ ADICIONAR TIMESTAMP PARA EVITAR CACHE (apenas GET)
     if (config.method === 'get') {
       config.params = {
         ...config.params,
@@ -41,11 +41,12 @@ api.interceptors.request.use(
     return config;
   },
   error => {
+    console.error('❌ Erro na configuração da requisição:', error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor to handle token expiration
+// Response interceptor to handle token expiration and errors
 api.interceptors.response.use(
   response => {
     console.log(`📥 Resposta recebida: ${response.status}`, response.data);
@@ -58,10 +59,50 @@ api.interceptors.response.use(
       error.response?.data
     );
 
+    // ⭐ LOG DETALHADO DO ERRO
+    console.error('❌ Detalhes do erro:', {
+      message: error.message,
+      code: error.code,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      url: error.config?.url,
+      method: error.config?.method,
+    });
+
+    // ⭐ TRATAMENTO ESPECÍFICO DE ERROS
     if (error.response?.status === 401) {
+      console.warn('🔒 Token expirado ou inválido');
       Cookies.remove('memory-token');
-      window.location.href = '/login';
+
+      // Evitar loop infinito se já estiver na página de login
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login';
+      }
+    } else if (error.response?.status === 413) {
+      console.error('📁 Payload muito grande');
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.error('Arquivos muito grandes. Tente com imagens menores.');
+      });
+    } else if (
+      error.code === 'ECONNABORTED' ||
+      error.message.includes('timeout')
+    ) {
+      console.error('⏰ Timeout na requisição');
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.error(
+          'Tempo limite excedido. Tente com menos imagens ou verifique sua conexão.'
+        );
+      });
+    } else if (!error.response) {
+      console.error('🌐 Erro de rede ou conexão');
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.error(
+          'Erro de conexão. Verifique sua internet e tente novamente.'
+        );
+      });
     }
+
     return Promise.reject(error);
   }
 );
@@ -69,143 +110,342 @@ api.interceptors.response.use(
 // Auth services
 export const authService = {
   login: async (username, password) => {
-    console.log('🔐 authService.login chamado com:', { username, password });
+    console.log('🔐 authService.login chamado');
 
-    const response = await api.post('/auth/login', { username, password });
+    try {
+      const response = await api.post('/auth/login', { username, password });
 
-    if (response.data.token) {
-      Cookies.set('memory-token', response.data.token, { expires: 7 });
-      console.log('🍪 Token salvo nos cookies');
+      if (response.data.token) {
+        Cookies.set('memory-token', response.data.token, { expires: 7 });
+        console.log('🍪 Token salvo nos cookies');
+      }
+
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro no login:', error);
+      throw error;
     }
-
-    return response.data;
   },
 
   logout: () => {
+    console.log('👋 Fazendo logout...');
     Cookies.remove('memory-token');
     window.location.href = '/login';
   },
 
   verifyToken: async () => {
-    const response = await api.get('/auth/verify');
-    return response.data;
+    try {
+      const response = await api.get('/auth/verify');
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro na verificação de token:', error);
+      throw error;
+    }
   },
 
   isAuthenticated: () => {
-    return !!Cookies.get('memory-token');
+    const hasToken = !!Cookies.get('memory-token');
+    console.log(
+      '🔍 Verificando autenticação:',
+      hasToken ? 'autenticado' : 'não autenticado'
+    );
+    return hasToken;
   },
 };
 
 // Upload services
 export const uploadService = {
   uploadMemories: async formData => {
-    const response = await api.post('/upload/memories', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    return response.data;
+    console.log('📤 uploadService.uploadMemories iniciado');
+
+    try {
+      // ⭐ VERIFICAR SE FORMDATA TEM DADOS
+      const files = formData.getAll('images');
+      const year = formData.get('year');
+      const category = formData.get('category');
+
+      console.log('📋 Dados para upload de memórias:', {
+        arquivos: files.length,
+        ano: year,
+        categoria: category,
+      });
+
+      if (files.length === 0) {
+        throw new Error('Nenhuma imagem selecionada para upload');
+      }
+
+      if (!year || !category) {
+        throw new Error('Ano e categoria são obrigatórios');
+      }
+
+      const response = await api.post('/upload/memories', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000, // 2 minutos para uploads
+      });
+
+      console.log('✅ Upload de memórias concluído:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro no upload de memórias:', error);
+      throw error;
+    }
   },
 
   uploadTravel: async formData => {
-    const response = await api.post('/upload/travel', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    return response.data;
+    console.log('📤 uploadService.uploadTravel iniciado');
+
+    try {
+      // ⭐ VERIFICAR SE FORMDATA TEM DADOS NECESSÁRIOS
+      const files = formData.getAll('images');
+      const travelName = formData.get('travelName');
+      const location = formData.get('location');
+      const date = formData.get('date');
+
+      console.log('📋 Dados para upload de viagem:', {
+        arquivos: files.length,
+        nome: travelName,
+        localizacao: location,
+        data: date,
+      });
+
+      // ⭐ VALIDAÇÕES ANTES DO ENVIO
+      if (files.length === 0) {
+        throw new Error('Nenhuma imagem selecionada para upload');
+      }
+
+      if (!travelName || travelName.trim() === '') {
+        throw new Error('Nome da viagem é obrigatório');
+      }
+
+      if (!location || location.trim() === '') {
+        throw new Error('Localização da viagem é obrigatória');
+      }
+
+      if (!date) {
+        throw new Error('Data da viagem é obrigatória');
+      }
+
+      console.log('✅ Validações passaram, enviando para API...');
+
+      const response = await api.post('/upload/travel', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000, // 2 minutos para uploads
+      });
+
+      console.log('✅ Upload de viagem concluído:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro no upload de viagem:', error);
+
+      // ⭐ LOG EXTRA PARA DEBUGGING
+      if (error.response) {
+        console.error('📋 Detalhes da resposta de erro:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data,
+        });
+      }
+
+      throw error;
+    }
   },
 
   deleteImage: async publicId => {
-    const response = await api.delete(
-      `/upload/image/${encodeURIComponent(publicId)}`
-    );
-    return response.data;
+    console.log('🗑️ uploadService.deleteImage chamado para:', publicId);
+
+    try {
+      const response = await api.delete(
+        `/upload/image/${encodeURIComponent(publicId)}`
+      );
+      console.log('✅ Imagem deletada com sucesso');
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao deletar imagem:', error);
+      throw error;
+    }
+  },
+
+  // ⭐ NOVO: Testar saúde do serviço de upload
+  testHealth: async () => {
+    console.log('🏥 Testando saúde do upload service...');
+
+    try {
+      const response = await api.get('/upload/health');
+      console.log('✅ Upload service funcionando');
+      return response.data;
+    } catch (error) {
+      console.error('❌ Upload service com problemas:', error);
+      throw error;
+    }
   },
 };
 
 // Memories services
 export const memoriesService = {
   getMemoriesByYear: async year => {
-    const response = await api.get(`/memories/year/${year}`);
-    return response.data;
+    console.log('📅 memoriesService.getMemoriesByYear para:', year);
+
+    try {
+      const response = await api.get(`/memories/year/${year}`);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao carregar memórias por ano:', error);
+      throw error;
+    }
   },
 
   getMemoriesSummary: async () => {
-    const response = await api.get('/memories/summary');
-    return response.data;
+    console.log('📊 memoriesService.getMemoriesSummary chamado');
+
+    try {
+      const response = await api.get('/memories/summary');
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao carregar resumo de memórias:', error);
+      throw error;
+    }
   },
 
   getRecentMemories: async () => {
-    const response = await api.get('/memories/recent');
-    return response.data;
+    console.log('🕒 memoriesService.getRecentMemories chamado');
+
+    try {
+      const response = await api.get('/memories/recent');
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao carregar memórias recentes:', error);
+      throw error;
+    }
   },
 };
 
-// ⭐ TRAVEL SERVICES - CORRIGIDO E MELHORADO
+// Travel services
 export const travelService = {
   // ⭐ MÉTODO PRINCIPAL: Obter todas as viagens (com cache buster)
   getAllTravels: async (bypassCache = false) => {
-    const params = bypassCache ? { _refresh: Date.now() } : {};
-    const response = await api.get('/travel', { params });
-    return response.data;
+    console.log('🗺️ travelService.getAllTravels, bypass cache:', bypassCache);
+
+    try {
+      const params = bypassCache ? { _refresh: Date.now() } : {};
+      const response = await api.get('/travel', { params });
+      console.log('✅ Viagens carregadas:', response.data.travels?.length || 0);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao carregar viagens:', error);
+      throw error;
+    }
   },
 
   getTravelById: async travelId => {
-    const response = await api.get(`/travel/${travelId}`);
-    return response.data;
+    console.log('🎯 travelService.getTravelById para:', travelId);
+
+    try {
+      const response = await api.get(`/travel/${travelId}`);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao carregar viagem específica:', error);
+      throw error;
+    }
   },
 
   // ⭐ MÉTODO PRINCIPAL: Obter markers (com cache buster)
   getTravelMarkers: async (bypassCache = false) => {
-    const params = bypassCache ? { _refresh: Date.now() } : {};
-    const response = await api.get('/travel/map/markers', { params });
-    return response.data;
+    console.log(
+      '📍 travelService.getTravelMarkers, bypass cache:',
+      bypassCache
+    );
+
+    try {
+      const params = bypassCache ? { _refresh: Date.now() } : {};
+      const response = await api.get('/travel/map/markers', { params });
+      console.log('✅ Markers carregados:', response.data.markers?.length || 0);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao carregar markers:', error);
+      throw error;
+    }
   },
 
   saveTravelMarker: async markerData => {
-    const response = await api.post('/travel/markers', markerData);
-    return response.data;
+    console.log('💾 travelService.saveTravelMarker chamado:', markerData);
+
+    try {
+      const response = await api.post('/travel/markers', markerData);
+      console.log('✅ Marker salvo com sucesso');
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao salvar marker:', error);
+      throw error;
+    }
   },
 
   // ⭐ ESTATÍSTICAS DE VIAGEM
   getTravelStats: async travelId => {
-    console.log('📊 Buscando estatísticas para:', travelId);
-    const response = await api.get(`/travel/${travelId}/stats`);
-    return response.data;
+    console.log('📊 travelService.getTravelStats para:', travelId);
+
+    try {
+      const response = await api.get(`/travel/${travelId}/stats`);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao carregar estatísticas:', error);
+      throw error;
+    }
   },
 
   // ⭐ EXCLUSÃO COMPLETA DE ÁLBUM
   deleteTravelAlbum: async travelId => {
-    console.log('🗑️ travelService.deleteTravelAlbum chamado para:', travelId);
+    console.log('🗑️ travelService.deleteTravelAlbum para:', travelId);
 
     try {
       const response = await api.delete(`/travel/${travelId}`);
-      console.log('✅ Resposta da API recebida:', response.data);
+      console.log('✅ Álbum deletado com sucesso:', response.data);
       return response.data;
     } catch (error) {
-      console.error('❌ Erro na chamada da API:', error);
-      console.error('❌ Response data:', error.response?.data);
+      console.error('❌ Erro ao deletar álbum:', error);
       console.error('❌ Status:', error.response?.status);
+      console.error('❌ Data:', error.response?.data);
       throw error;
     }
   },
 
   // ⭐ EXCLUSÃO APENAS DO MARKER
   deleteTravelMarker: async travelId => {
-    console.log('🗺️ Deletando apenas marker:', travelId);
-    const response = await api.delete(`/travel/markers/${travelId}`);
-    return response.data;
+    console.log('🗺️ travelService.deleteTravelMarker para:', travelId);
+
+    try {
+      const response = await api.delete(`/travel/markers/${travelId}`);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao deletar marker:', error);
+      throw error;
+    }
   },
 
   // ⭐ GEOCODING AUXILIAR
   geocodeLocation: async location => {
-    console.log('🌍 Geocodificando:', location);
-    const response = await api.post('/travel/geocode', { location });
-    return response.data;
+    console.log('🌍 travelService.geocodeLocation para:', location);
+
+    try {
+      const response = await api.post('/travel/geocode', { location });
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro no geocoding:', error);
+      throw error;
+    }
   },
 
   // ⭐ LIMPEZA DE ÁLBUNS ÓRFÃOS (desenvolvimento)
   cleanupOrphanedAlbums: async () => {
-    console.log('🧹 Limpando álbuns órfãos...');
-    const response = await api.delete('/travel/cleanup/orphaned');
-    return response.data;
+    console.log('🧹 travelService.cleanupOrphanedAlbums chamado');
+
+    try {
+      const response = await api.delete('/travel/cleanup/orphaned');
+      console.log('✅ Limpeza concluída:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro na limpeza:', error);
+      throw error;
+    }
   },
 
   // ⭐ DEBUG MARKERS (desenvolvimento)
@@ -213,13 +453,21 @@ export const travelService = {
     if (process.env.NODE_ENV !== 'development') {
       throw new Error('Debug markers only available in development');
     }
-    const response = await api.get('/travel/debug/markers');
-    return response.data;
+
+    console.log('🔍 travelService.getDebugMarkers chamado');
+
+    try {
+      const response = await api.get('/travel/debug/markers');
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao carregar debug markers:', error);
+      throw error;
+    }
   },
 
   // ⭐ MÉTODO PARA RECARREGAR DADOS FORÇANDO BYPASS DE CACHE
   refreshAllData: async () => {
-    console.log('🔄 Recarregando todos os dados de viagem...');
+    console.log('🔄 travelService.refreshAllData chamado');
 
     try {
       const [travelsResponse, markersResponse] = await Promise.all([
@@ -227,13 +475,16 @@ export const travelService = {
         travelService.getTravelMarkers(true), // bypass cache
       ]);
 
-      return {
+      const result = {
         success: true,
         travels: travelsResponse.success ? travelsResponse.travels : [],
         markers: markersResponse.success ? markersResponse.markers : [],
         travelsLoaded: travelsResponse.success,
         markersLoaded: markersResponse.success,
       };
+
+      console.log('✅ Dados recarregados:', result);
+      return result;
     } catch (error) {
       console.error('❌ Erro ao recarregar dados:', error);
       return {
@@ -245,6 +496,99 @@ export const travelService = {
         markersLoaded: false,
       };
     }
+  },
+};
+
+// ⭐ NOVO: Serviço de diagnóstico
+export const diagnosticService = {
+  // Testar conectividade geral da API
+  testApiConnection: async () => {
+    console.log('🔍 Testando conectividade da API...');
+
+    try {
+      const response = await api.get('/');
+      console.log('✅ API respondendo:', response.data);
+      return { success: true, data: response.data };
+    } catch (error) {
+      console.error('❌ API não está respondendo:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Verificar status de todos os serviços
+  checkAllServices: async () => {
+    console.log('🏥 Verificando status de todos os serviços...');
+
+    const results = {
+      api: { status: 'checking...' },
+      auth: { status: 'checking...' },
+      upload: { status: 'checking...' },
+      travel: { status: 'checking...' },
+    };
+
+    // Testar API base
+    try {
+      await diagnosticService.testApiConnection();
+      results.api = { status: 'ok' };
+    } catch (error) {
+      results.api = { status: 'error', error: error.message };
+    }
+
+    // Testar Auth
+    try {
+      if (authService.isAuthenticated()) {
+        await authService.verifyToken();
+        results.auth = { status: 'ok' };
+      } else {
+        results.auth = { status: 'not_authenticated' };
+      }
+    } catch (error) {
+      results.auth = { status: 'error', error: error.message };
+    }
+
+    // Testar Upload
+    try {
+      await uploadService.testHealth();
+      results.upload = { status: 'ok' };
+    } catch (error) {
+      results.upload = { status: 'error', error: error.message };
+    }
+
+    // Testar Travel
+    try {
+      await travelService.getTravelMarkers();
+      results.travel = { status: 'ok' };
+    } catch (error) {
+      results.travel = { status: 'error', error: error.message };
+    }
+
+    console.log('🏥 Resultado do diagnóstico:', results);
+    return results;
+  },
+
+  // Log informações do ambiente
+  logEnvironmentInfo: () => {
+    const info = {
+      environment: {
+        API_URL: import.meta.env.VITE_API_URL,
+        MODE: import.meta.env.MODE,
+        DEV: import.meta.env.DEV,
+        PROD: import.meta.env.PROD,
+      },
+      browser: {
+        userAgent: navigator.userAgent,
+        language: navigator.language,
+        cookiesEnabled: navigator.cookieEnabled,
+        onLine: navigator.onLine,
+      },
+      auth: {
+        hasToken: !!Cookies.get('memory-token'),
+        tokenValue: Cookies.get('memory-token') ? 'present' : 'absent',
+      },
+    };
+
+    console.log('🌍 Informações do ambiente:', info);
+    return info;
   },
 };
 

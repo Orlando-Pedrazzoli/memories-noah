@@ -1,4 +1,4 @@
-// client/src/pages/UploadPage.jsx - VERSÃO ATUALIZADA
+// client/src/pages/UploadPage.jsx - VERSÃO CORRIGIDA
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { uploadService } from '../services/api';
 import Navbar from '../components/layout/Navbar';
 import Footer from '../components/layout/Footer';
-import LocationPicker from '../components/travel/LocationPicker'; // 🆕 NOVO IMPORT
+import LocationPicker from '../components/travel/LocationPicker';
 import {
   Upload,
   ImageIcon,
@@ -14,6 +14,7 @@ import {
   X,
   Loader2,
   CheckCircle,
+  AlertCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -23,6 +24,11 @@ const UploadPage = () => {
   const [previews, setPreviews] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadType, setUploadType] = useState('memories');
+  const [uploadProgress, setUploadProgress] = useState({
+    step: 0,
+    message: '',
+    details: '',
+  });
 
   const {
     register,
@@ -30,11 +36,11 @@ const UploadPage = () => {
     formState: { errors },
     reset,
     watch,
-    setValue, // 🆕 ADICIONAR setValue para o LocationPicker
+    setValue,
   } = useForm();
 
   const watchedCategory = watch('category');
-  const watchedLocation = watch('location'); // 🆕 WATCH para location
+  const watchedLocation = watch('location');
 
   const yearOptions = [
     { value: '0-12-months', label: '0-12 meses' },
@@ -87,23 +93,55 @@ const UploadPage = () => {
       return;
     }
 
+    console.log('🚀 Iniciando upload:', {
+      uploadType,
+      data,
+      fileCount: selectedFiles.length,
+    });
+
     setUploading(true);
+    setUploadProgress({
+      step: 1,
+      message: 'Preparando upload...',
+      details: `Processando ${selectedFiles.length} ${
+        selectedFiles.length === 1 ? 'imagem' : 'imagens'
+      }`,
+    });
 
     try {
       const formData = new FormData();
 
+      // ⭐ ADICIONAR ARQUIVOS AO FORMDATA
       selectedFiles.forEach(file => {
         formData.append('images', file);
       });
 
       if (uploadType === 'memories') {
+        // ⭐ UPLOAD DE MEMÓRIAS
+        setUploadProgress({
+          step: 2,
+          message: 'Enviando memórias...',
+          details: `Categoria: ${data.category} - Ano: ${data.year}`,
+        });
+
         formData.append('year', data.year);
         formData.append('category', data.category);
         formData.append('description', data.description || '');
 
+        console.log('📤 Enviando memórias:', {
+          year: data.year,
+          category: data.category,
+        });
+
         const response = await uploadService.uploadMemories(formData);
 
         if (response.success) {
+          setUploadProgress({
+            step: 3,
+            message: 'Upload concluído!',
+            details: `${response.images.length} imagens salvas com sucesso`,
+          });
+
           toast.success(
             `${response.images.length} imagens enviadas com sucesso!`
           );
@@ -116,73 +154,122 @@ const UploadPage = () => {
           }, 1500);
 
           resetForm();
+        } else {
+          throw new Error(response.error || 'Falha no upload de memórias');
         }
       } else {
-        // 🆕 UPLOAD DE VIAGEM COM COORDENADAS
+        // ⭐ UPLOAD DE VIAGEM
+        setUploadProgress({
+          step: 2,
+          message: 'Criando álbum de viagem...',
+          details: `Destino: ${data.location}`,
+        });
+
+        // ⭐ VALIDAÇÃO DE CAMPOS OBRIGATÓRIOS
+        if (!data.travelName || !data.location || !data.date) {
+          throw new Error(
+            'Nome da viagem, localização e data são obrigatórios'
+          );
+        }
+
         formData.append('travelName', data.travelName);
         formData.append('location', data.location);
         formData.append('date', data.date);
         formData.append('description', data.description || '');
 
-        // 🆕 Se houver coordenadas salvas, incluir
+        console.log('📤 Enviando viagem:', {
+          travelName: data.travelName,
+          location: data.location,
+          date: data.date,
+        });
+
+        // ⭐ ADICIONAR COORDENADAS SE DISPONÍVEIS
         if (window.selectedLocationCoords) {
           formData.append('latitude', window.selectedLocationCoords.lat);
           formData.append('longitude', window.selectedLocationCoords.lon);
+          console.log(
+            '📍 Coordenadas incluídas:',
+            window.selectedLocationCoords
+          );
         }
+
+        setUploadProgress({
+          step: 3,
+          message: 'Geocodificando localização...',
+          details: 'Tentando encontrar coordenadas no mapa',
+        });
 
         const response = await uploadService.uploadTravel(formData);
 
+        console.log('📥 Resposta do upload:', response);
+
         if (response.success) {
-          toast.success(
-            `Álbum de viagem "${data.travelName}" criado com sucesso!`
-          );
+          setUploadProgress({
+            step: 4,
+            message: 'Álbum criado com sucesso!',
+            details: response.marker?.created
+              ? response.marker.hasCoordinates
+                ? '✅ Adicionado ao mapa com coordenadas'
+                : '⚠️ Adicionado sem coordenadas (localização não encontrada)'
+              : '⚠️ Álbum criado, mas marker não pôde ser adicionado',
+          });
 
-          // 🆕 CRIAR MARKER NO BACKEND (se as coordenadas existirem)
-          if (window.selectedLocationCoords) {
-            try {
-              const markerData = {
-                travelId: response.travel.folder,
-                name: data.travelName,
-                location: data.location,
-                date: data.date,
-                coordinates: [
-                  window.selectedLocationCoords.lat,
-                  window.selectedLocationCoords.lon,
-                ],
-              };
-
-              // Fazer chamada para criar marker (assumindo que você tenha um endpoint)
-              const token = localStorage.getItem('token');
-              await fetch('/api/travel/markers', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(markerData),
-              });
-
-              // Limpar coordenadas temporárias
-              delete window.selectedLocationCoords;
-            } catch (markerError) {
-              console.error('Erro ao criar marker:', markerError);
-              // Não falhar o upload por causa do marker
+          // ⭐ TOAST BASEADO NO RESULTADO DO MARKER
+          if (response.marker?.created) {
+            if (response.marker.hasCoordinates) {
+              toast.success(
+                `Álbum "${data.travelName}" criado e adicionado ao mapa!`,
+                { duration: 4000 }
+              );
+            } else {
+              toast(
+                `Álbum "${data.travelName}" criado! Localização "${data.location}" não foi encontrada no mapa.`,
+                { duration: 6000, icon: '⚠️' }
+              );
             }
+          } else {
+            toast.success(`Álbum "${data.travelName}" criado com sucesso!`, {
+              duration: 4000,
+            });
           }
+
+          // ⭐ LIMPAR COORDENADAS TEMPORÁRIAS
+          delete window.selectedLocationCoords;
 
           setTimeout(() => {
             navigate('/travels', {
               replace: true,
               state: { fromUpload: true },
             });
-          }, 1500);
+          }, 2000);
 
           resetForm();
+        } else {
+          throw new Error(response.error || 'Falha no upload de viagem');
         }
       }
     } catch (error) {
-      console.error('Upload error:', error);
-      toast.error('Erro ao enviar imagens');
+      console.error('❌ Upload error:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+
+      setUploadProgress({
+        step: -1,
+        message: 'Erro no upload',
+        details:
+          error.response?.data?.error || error.message || 'Erro desconhecido',
+      });
+
+      // ⭐ TOAST DE ERRO ESPECÍFICO
+      const errorMessage =
+        error.response?.data?.error ||
+        error.message ||
+        'Erro ao enviar imagens';
+      toast.error(errorMessage, { duration: 5000 });
+
       setUploading(false);
     }
   };
@@ -192,7 +279,8 @@ const UploadPage = () => {
     setSelectedFiles([]);
     previews.forEach(preview => URL.revokeObjectURL(preview.url));
     setPreviews([]);
-    // 🆕 Limpar coordenadas ao resetar
+    setUploading(false);
+    setUploadProgress({ step: 0, message: '', details: '' });
     delete window.selectedLocationCoords;
   };
 
@@ -261,6 +349,52 @@ const UploadPage = () => {
             </button>
           </div>
         </div>
+
+        {/* ⭐ PROGRESS INDICATOR DURANTE UPLOAD */}
+        {uploading && (
+          <div className='bg-white rounded-lg shadow-md p-6 mb-6'>
+            <div className='flex items-center space-x-3 mb-4'>
+              {uploadProgress.step === -1 ? (
+                <AlertCircle className='h-6 w-6 text-red-600' />
+              ) : uploadProgress.step >= 4 ? (
+                <CheckCircle className='h-6 w-6 text-green-600' />
+              ) : (
+                <Loader2 className='h-6 w-6 text-blue-600 animate-spin' />
+              )}
+              <h3
+                className={`text-lg font-semibold ${
+                  uploadProgress.step === -1
+                    ? 'text-red-600'
+                    : uploadProgress.step >= 4
+                    ? 'text-green-600'
+                    : 'text-blue-600'
+                }`}
+              >
+                {uploadProgress.message}
+              </h3>
+            </div>
+
+            {uploadProgress.details && (
+              <p className='text-gray-600 text-sm mb-4'>
+                {uploadProgress.details}
+              </p>
+            )}
+
+            {/* Progress Bar */}
+            {uploadProgress.step > 0 && uploadProgress.step !== -1 && (
+              <div className='w-full bg-gray-200 rounded-full h-2'>
+                <div
+                  className={`h-2 rounded-full transition-all duration-500 ${
+                    uploadProgress.step >= 4 ? 'bg-green-500' : 'bg-blue-500'
+                  }`}
+                  style={{
+                    width: `${Math.min((uploadProgress.step / 4) * 100, 100)}%`,
+                  }}
+                ></div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Upload Form */}
         <form onSubmit={handleSubmit(onSubmit)} className='space-y-6'>
@@ -346,7 +480,6 @@ const UploadPage = () => {
                     )}
                   </div>
 
-                  {/* 🆕 USAR LOCATIONPICKER EM VEZ DE INPUT SIMPLES */}
                   <div>
                     <label className='block text-sm font-medium text-gray-700 mb-2'>
                       Localização *
@@ -357,7 +490,6 @@ const UploadPage = () => {
                       disabled={uploading}
                       error={errors.location?.message}
                     />
-                    {/* Registrar o campo para validação */}
                     <input
                       {...register('location', {
                         required: 'Localização é obrigatória',
@@ -428,12 +560,12 @@ const UploadPage = () => {
                   <Upload className='h-12 w-12 text-gray-400 mx-auto mb-4' />
                   <p className='text-lg font-medium text-gray-700 mb-2'>
                     {uploading
-                      ? 'Enviando...'
+                      ? 'Upload em andamento...'
                       : 'Clique para selecionar imagens'}
                   </p>
                   <p className='text-sm text-gray-500'>
                     {uploading
-                      ? 'Aguarde enquanto processamos suas imagens'
+                      ? 'Por favor, aguarde o término do upload'
                       : `ou arraste e solte aqui (máximo ${
                           uploadType === 'travel' ? 20 : 10
                         } imagens)`}

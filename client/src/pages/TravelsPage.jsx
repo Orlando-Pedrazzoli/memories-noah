@@ -1,11 +1,11 @@
-// client/src/pages/TravelsPage.jsx - VERSÃO CORRIGIDA
+// client/src/pages/TravelsPage.jsx - VERSÃO COM MAPBOX 3D
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import { travelService } from '../services/api';
 import Navbar from '../components/layout/Navbar';
 import Footer from '../components/layout/Footer';
 import TravelAlbum from '../components/travel/TravelAlbum';
+import MapboxTravelMap from '../components/travel/MapboxTravelMap'; // ⭐ NOVO IMPORT
 import {
   MapPin,
   ImageIcon,
@@ -13,46 +13,9 @@ import {
   Loader2,
   RefreshCw,
   Trash2,
+  Globe,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import 'leaflet/dist/leaflet.css';
-
-// ⭐ FIX CRÍTICO: Corrigir ícones dos markers do Leaflet
-import L from 'leaflet';
-
-// Remover referência padrão quebrada
-delete L.Icon.Default.prototype._getIconUrl;
-
-// Configurar ícones corretos
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl:
-    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl:
-    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl:
-    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
-
-const createCustomIcon = (color = 'red') => {
-  const colors = {
-    red: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-    blue: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-    green:
-      'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-    orange:
-      'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-orange.png',
-  };
-
-  return new L.Icon({
-    iconUrl: colors[color] || colors.red,
-    shadowUrl:
-      'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41],
-  });
-};
 
 const TravelsPage = () => {
   const [travels, setTravels] = useState([]);
@@ -132,7 +95,6 @@ const TravelsPage = () => {
         toast.error('Erro ao carregar viagens');
       }
 
-      // ⭐ GARANTIR QUE OS ARRAYS ESTEJAM SEMPRE DEFINIDOS
       setTravels([]);
       setMarkers([]);
     } finally {
@@ -158,12 +120,10 @@ const TravelsPage = () => {
     }
 
     try {
-      const response = await travelService.deleteTravelAlbum(
-        'cleanup/orphaned'
-      );
+      const response = await travelService.cleanupOrphanedAlbums();
       if (response.success) {
         toast.success(
-          `${response.cleanedFolders.length} álbuns órfãos removidos`
+          `${response.details.totalCleaned} álbuns órfãos removidos`
         );
         loadTravelsData();
       }
@@ -178,11 +138,9 @@ const TravelsPage = () => {
     (deletedTravelId, details) => {
       console.log('🗑️ Álbum deletado:', deletedTravelId, details);
 
-      // ⭐ VERIFICAR SE A LIMPEZA FOI COMPLETA
       if (details?.cleanupComplete) {
         console.log('✅ Limpeza completa - removendo da interface');
 
-        // Remover da lista de travels
         setTravels(prevTravels => {
           const updated = prevTravels.filter(
             travel => travel.id !== deletedTravelId
@@ -191,7 +149,6 @@ const TravelsPage = () => {
           return updated;
         });
 
-        // Remover da lista de markers
         setMarkers(prevMarkers => {
           const updated = prevMarkers.filter(
             marker => marker.travelId !== deletedTravelId
@@ -208,7 +165,6 @@ const TravelsPage = () => {
         );
         setDebugInfo('⚠️ Limpeza incompleta - recarregando...');
 
-        // ⭐ RECARREGAR DADOS SE A LIMPEZA NÃO FOI COMPLETA
         setTimeout(() => {
           loadTravelsData(true);
         }, 1000);
@@ -221,6 +177,7 @@ const TravelsPage = () => {
     [loadTravelsData]
   );
 
+  // ⭐ HANDLER PARA CLICK NO MARKER DO MAPBOX
   const handleMarkerClick = async marker => {
     try {
       console.log('🎯 Clicked marker:', marker);
@@ -240,7 +197,7 @@ const TravelsPage = () => {
     setShowAlbum(true);
   };
 
-  // ⭐ FILTRAR MARKERS VÁLIDOS
+  // ⭐ FILTRAR MARKERS VÁLIDOS PARA O MAPBOX
   const validMarkers = markers.filter(
     marker =>
       marker.coordinates &&
@@ -259,10 +216,13 @@ const TravelsPage = () => {
         <div className='mb-8'>
           <div className='flex items-center justify-between'>
             <div className='flex items-center space-x-3'>
-              <MapPin className='h-6 w-6 text-primary-600' />
+              <Globe className='h-6 w-6 text-primary-600' />
               <h1 className='text-3xl font-bold text-gray-900'>
                 Nossas Viagens
               </h1>
+              <div className='bg-gradient-to-r from-blue-500 to-purple-600 text-white px-3 py-1 rounded-full text-xs font-medium'>
+                Mapa 3D
+              </div>
             </div>
 
             <div className='flex items-center space-x-2'>
@@ -295,8 +255,7 @@ const TravelsPage = () => {
           </div>
 
           <p className='text-gray-600 mt-2'>
-            Explore os lugares que visitamos e reviva os momentos especiais de
-            cada viagem
+            Explore os lugares que visitamos em um mapa 3D interativo
           </p>
 
           {/* ⭐ DEBUG INFO */}
@@ -316,15 +275,17 @@ const TravelsPage = () => {
           </div>
         ) : (
           <div className='grid grid-cols-1 lg:grid-cols-3 gap-8'>
-            {/* Map Section */}
+            {/* ⭐ MAPBOX 3D SECTION */}
             <div className='lg:col-span-2'>
               <div className='bg-white rounded-lg shadow-md overflow-hidden'>
                 <div className='p-4 border-b border-gray-200'>
-                  <h2 className='text-lg font-semibold text-gray-900'>
-                    Mapa Mundial
+                  <h2 className='text-lg font-semibold text-gray-900 flex items-center space-x-2'>
+                    <Globe className='h-5 w-5 text-blue-600' />
+                    <span>Mapa Mundial 3D</span>
                   </h2>
-                  <p className='text-sm text-gray-600'>
-                    Clique nos marcadores para ver o álbum da viagem
+                  <p className='text-sm text-gray-600 mt-1'>
+                    Clique nos marcadores para ver o álbum • Arraste para
+                    navegar • Scroll para zoom
                     {validMarkers.length > 0 &&
                       ` • ${validMarkers.length} ${
                         validMarkers.length === 1 ? 'marcador' : 'marcadores'
@@ -332,113 +293,62 @@ const TravelsPage = () => {
                   </p>
                 </div>
 
+                {/* ⭐ MAPBOX COMPONENT */}
                 <div className='h-96 lg:h-[500px]'>
-                  <MapContainer
-                    center={[-15.7801, -47.9292]}
-                    zoom={3}
-                    style={{ height: '100%', width: '100%' }}
-                    scrollWheelZoom={true}
-                    zoomControl={true}
-                  >
-                    <TileLayer
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                      url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-                    />
-
-                    {/* ⭐ RENDERIZAR MARKERS APENAS QUANDO EXISTEM */}
-                    {validMarkers.length > 0 &&
-                      validMarkers.map(marker => {
-                        console.log(
-                          '🔍 Rendering marker:',
-                          marker.name,
-                          marker.coordinates
-                        );
-
-                        return (
-                          <Marker
-                            key={marker.id}
-                            position={marker.coordinates}
-                            icon={createCustomIcon('red')}
-                            eventHandlers={{
-                              click: () => handleMarkerClick(marker),
-                            }}
-                          >
-                            <Popup maxWidth={250}>
-                              <div className='text-center'>
-                                <h3 className='font-semibold text-gray-900 mb-2 text-base'>
-                                  {marker.name}
-                                </h3>
-                                <p className='text-sm text-gray-600 mb-2'>
-                                  📍 {marker.location}
-                                </p>
-                                <p className='text-sm text-gray-600 mb-2'>
-                                  📅{' '}
-                                  {new Date(marker.date).toLocaleDateString(
-                                    'pt-BR'
-                                  )}
-                                </p>
-                                <p className='text-xs text-gray-500 mb-3'>
-                                  📸 {marker.imageCount} foto
-                                  {marker.imageCount !== 1 ? 's' : ''}
-                                </p>
-                                <button
-                                  className='w-full bg-primary-600 text-white px-3 py-2 rounded-md text-sm hover:bg-primary-700 transition-colors'
-                                  onClick={() => handleMarkerClick(marker)}
-                                >
-                                  Ver Álbum 🖼️
-                                </button>
-                              </div>
-                            </Popup>
-                          </Marker>
-                        );
-                      })}
-                  </MapContainer>
+                  <MapboxTravelMap
+                    markers={validMarkers}
+                    onMarkerClick={handleMarkerClick}
+                    loading={loading || refreshing}
+                  />
                 </div>
 
-                {/* ⭐ INFO DE STATUS */}
-                {markers.length === 0 ? (
-                  <div className='p-4 bg-blue-50 border-t border-blue-200'>
-                    <p className='text-sm text-blue-800 text-center'>
-                      ℹ️ Nenhuma viagem adicionada ainda. Crie sua primeira
-                      viagem para ver no mapa!
-                    </p>
-                  </div>
-                ) : (
-                  <div className='p-4 bg-gray-50 border-t border-gray-200'>
-                    <div className='grid grid-cols-2 md:grid-cols-3 gap-4 text-sm'>
-                      <div>
-                        <span className='font-medium text-gray-900'>
-                          Total:
-                        </span>
-                        <span className='ml-1 text-gray-600'>
-                          {markers.length}
-                        </span>
+                {/* ⭐ INFO DE STATUS MELHORADA */}
+                <div className='p-4 bg-gradient-to-r from-gray-50 to-blue-50 border-t border-gray-200'>
+                  <div className='grid grid-cols-2 md:grid-cols-4 gap-4 text-sm'>
+                    <div className='text-center'>
+                      <div className='font-semibold text-gray-900'>
+                        {markers.length}
                       </div>
-                      <div>
-                        <span className='font-medium text-gray-900'>
-                          No mapa:
-                        </span>
-                        <span className='ml-1 text-green-600'>
-                          {validMarkers.length}
-                        </span>
+                      <div className='text-gray-600'>Total</div>
+                    </div>
+                    <div className='text-center'>
+                      <div className='font-semibold text-green-600'>
+                        {validMarkers.length}
                       </div>
-                      <div>
-                        <span className='font-medium text-gray-900'>
-                          Países:
-                        </span>
-                        <span className='ml-1 text-blue-600'>
-                          {
-                            new Set(
-                              validMarkers
-                                .map(m => m.location?.split(',').pop()?.trim())
-                                .filter(Boolean)
-                            ).size
-                          }
-                        </span>
+                      <div className='text-gray-600'>No Mapa</div>
+                    </div>
+                    <div className='text-center'>
+                      <div className='font-semibold text-blue-600'>
+                        {
+                          new Set(
+                            validMarkers
+                              .map(m => m.location?.split(',').pop()?.trim())
+                              .filter(Boolean)
+                          ).size
+                        }
                       </div>
+                      <div className='text-gray-600'>Países</div>
+                    </div>
+                    <div className='text-center'>
+                      <div className='font-semibold text-purple-600'>
+                        {travels.reduce(
+                          (acc, travel) => acc + travel.imageCount,
+                          0
+                        )}
+                      </div>
+                      <div className='text-gray-600'>Fotos</div>
                     </div>
                   </div>
-                )}
+
+                  {markers.length === 0 && (
+                    <div className='text-center mt-4 p-4 bg-blue-100 rounded-lg'>
+                      <p className='text-sm text-blue-800'>
+                        🗺️ Nenhuma viagem adicionada ainda. Crie sua primeira
+                        viagem para ver no mapa 3D!
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -489,15 +399,15 @@ const TravelsPage = () => {
                           )}
                         </div>
 
-                        {/* ⭐ STATUS DE COORDENADAS */}
+                        {/* ⭐ STATUS DE COORDENADAS MELHORADO */}
                         <div className='flex items-center space-x-2 text-xs'>
                           {travel.coordinates ? (
-                            <span className='text-green-600 flex items-center'>
-                              <MapPin className='h-3 w-3 mr-1' />
-                              No mapa
+                            <span className='text-green-600 flex items-center bg-green-50 px-2 py-1 rounded-full'>
+                              <Globe className='h-3 w-3 mr-1' />
+                              No mapa 3D
                             </span>
                           ) : (
-                            <span className='text-gray-400 flex items-center'>
+                            <span className='text-gray-400 flex items-center bg-gray-50 px-2 py-1 rounded-full'>
                               <MapPin className='h-3 w-3 mr-1' />
                               Sem localização
                             </span>
@@ -513,16 +423,16 @@ const TravelsPage = () => {
                   </div>
                 ) : (
                   <div className='text-center py-8'>
-                    <MapPin className='h-12 w-12 text-gray-400 mx-auto mb-4' />
+                    <Globe className='h-12 w-12 text-gray-400 mx-auto mb-4' />
                     <h3 className='text-lg font-medium text-gray-900 mb-2'>
                       Nenhuma viagem ainda
                     </h3>
                     <p className='text-gray-600 mb-4'>
-                      Crie seu primeiro álbum de viagem para aparecer no mapa
+                      Crie seu primeiro álbum de viagem para aparecer no mapa 3D
                     </p>
                     <a
                       href='/upload'
-                      className='inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors text-sm'
+                      className='inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-md hover:from-blue-700 hover:to-purple-700 transition-colors text-sm'
                     >
                       Adicionar Primeira Viagem
                     </a>
@@ -530,23 +440,29 @@ const TravelsPage = () => {
                 )}
               </div>
 
-              {/* Statistics */}
+              {/* ⭐ Statistics MELHORADAS */}
               <div className='bg-white rounded-lg shadow-md p-6'>
                 <h3 className='text-lg font-semibold text-gray-900 mb-4'>
-                  Estatísticas
+                  Estatísticas Globais
                 </h3>
 
-                <div className='space-y-3'>
-                  <div className='flex justify-between items-center'>
-                    <span className='text-gray-600'>Total de viagens:</span>
-                    <span className='font-semibold text-gray-900'>
+                <div className='space-y-4'>
+                  <div className='flex justify-between items-center p-3 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg'>
+                    <div className='flex items-center space-x-2'>
+                      <Globe className='h-4 w-4 text-blue-600' />
+                      <span className='text-gray-700'>Total de viagens:</span>
+                    </div>
+                    <span className='font-bold text-blue-600'>
                       {travels.length}
                     </span>
                   </div>
 
-                  <div className='flex justify-between items-center'>
-                    <span className='text-gray-600'>Total de fotos:</span>
-                    <span className='font-semibold text-gray-900'>
+                  <div className='flex justify-between items-center p-3 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg'>
+                    <div className='flex items-center space-x-2'>
+                      <ImageIcon className='h-4 w-4 text-purple-600' />
+                      <span className='text-gray-700'>Total de fotos:</span>
+                    </div>
+                    <span className='font-bold text-purple-600'>
                       {travels.reduce(
                         (acc, travel) => acc + travel.imageCount,
                         0
@@ -554,16 +470,22 @@ const TravelsPage = () => {
                     </span>
                   </div>
 
-                  <div className='flex justify-between items-center'>
-                    <span className='text-gray-600'>No mapa:</span>
-                    <span className='font-semibold text-green-600'>
+                  <div className='flex justify-between items-center p-3 bg-gradient-to-r from-green-50 to-green-100 rounded-lg'>
+                    <div className='flex items-center space-x-2'>
+                      <MapPin className='h-4 w-4 text-green-600' />
+                      <span className='text-gray-700'>No mapa 3D:</span>
+                    </div>
+                    <span className='font-bold text-green-600'>
                       {validMarkers.length}
                     </span>
                   </div>
 
-                  <div className='flex justify-between items-center'>
-                    <span className='text-gray-600'>Países visitados:</span>
-                    <span className='font-semibold text-gray-900'>
+                  <div className='flex justify-between items-center p-3 bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg'>
+                    <div className='flex items-center space-x-2'>
+                      <Calendar className='h-4 w-4 text-orange-600' />
+                      <span className='text-gray-700'>Países visitados:</span>
+                    </div>
+                    <span className='font-bold text-orange-600'>
                       {new Set(
                         validMarkers
                           .filter(m => m.location)
@@ -572,13 +494,56 @@ const TravelsPage = () => {
                     </span>
                   </div>
                 </div>
+
+                {/* ⭐ MAPA PROGRESS BAR */}
+                {markers.length > 0 && (
+                  <div className='mt-4 p-3 bg-gray-50 rounded-lg'>
+                    <div className='flex justify-between text-xs text-gray-600 mb-1'>
+                      <span>Cobertura do Mapa</span>
+                      <span>
+                        {Math.round(
+                          (validMarkers.length / markers.length) * 100
+                        )}
+                        %
+                      </span>
+                    </div>
+                    <div className='w-full bg-gray-200 rounded-full h-2'>
+                      <div
+                        className='bg-gradient-to-r from-green-400 to-blue-500 h-2 rounded-full transition-all duration-500'
+                        style={{
+                          width: `${
+                            (validMarkers.length / markers.length) * 100
+                          }%`,
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ⭐ MAPBOX INFO CARD */}
+              <div className='bg-gradient-to-br from-blue-600 to-purple-600 text-white rounded-lg shadow-md p-6'>
+                <div className='flex items-center space-x-3 mb-3'>
+                  <Globe className='h-6 w-6' />
+                  <h3 className='text-lg font-semibold'>Mapa 3D Interativo</h3>
+                </div>
+                <p className='text-blue-100 text-sm mb-4'>
+                  Explore suas viagens em um mapa 3D com vista de satélite,
+                  rotação automática e controles avançados.
+                </p>
+                <div className='space-y-2 text-xs text-blue-100'>
+                  <div>🖱️ Arraste para mover o mapa</div>
+                  <div>🔍 Scroll para zoom</div>
+                  <div>📍 Clique nos markers para ver álbuns</div>
+                  <div>🎛️ Use os controles para mudar estilo</div>
+                </div>
               </div>
             </div>
           </div>
         )}
       </main>
 
-      {/* ⭐ TRAVEL ALBUM MODAL COM PROP DE EXCLUSÃO */}
+      {/* ⭐ TRAVEL ALBUM MODAL */}
       {showAlbum && selectedTravel && (
         <TravelAlbum
           travel={selectedTravel}

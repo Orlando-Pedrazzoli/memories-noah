@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   X,
   MapPin,
@@ -15,6 +16,7 @@ import { travelService } from '../../services/api';
 import toast from 'react-hot-toast';
 
 const TravelAlbum = ({ travel, onClose, onTravelDeleted }) => {
+  const navigate = useNavigate();
   const [selectedImage, setSelectedImage] = useState(null);
   const [images, setImages] = useState(travel.images);
   const [showMenu, setShowMenu] = useState(false);
@@ -82,20 +84,33 @@ const TravelAlbum = ({ travel, onClose, onTravelDeleted }) => {
     }, 150);
   };
 
-  // ⭐ HANDLER para exclusão do álbum completo
+  // ⭐ HANDLER MELHORADO para exclusão do álbum completo
   const handleAlbumDeleted = (travelId, details) => {
-    toast.success(
-      `Álbum "${travel.name}" excluído com sucesso! ${details.imagesDeleted} imagens removidas.`,
-      { duration: 5000 }
-    );
+    console.log('🗑️ Álbum deletado no TravelAlbum:', travelId, details);
 
-    // Notificar componente pai para atualizar a lista
-    if (onTravelDeleted) {
-      onTravelDeleted(travelId);
-    }
+    // ⭐ FECHAR ESTE MODAL IMEDIATAMENTE
+    setShowDeleteModal(false);
 
-    // Fechar modal
-    onClose();
+    // ⭐ FECHAR O MODAL DO ÁLBUM
+    setTimeout(() => {
+      onClose();
+
+      // ⭐ NOTIFICAR COMPONENTE PAI (TravelsPage)
+      if (onTravelDeleted) {
+        onTravelDeleted(travelId, details);
+      }
+
+      // ⭐ NAVEGAR PARA TRAVELS COMO BACKUP
+      setTimeout(() => {
+        navigate('/travels', { replace: true });
+      }, 100);
+    }, 100);
+  };
+
+  // ⭐ HANDLER MELHORADO para fechar modal de exclusão
+  const handleCloseDeleteModal = () => {
+    setShowDeleteModal(false);
+    // Não navegar aqui - deixar o usuário no álbum se cancelar
   };
 
   return (
@@ -281,11 +296,11 @@ const TravelAlbum = ({ travel, onClose, onTravelDeleted }) => {
         )}
       </div>
 
-      {/* ⭐ MODAL DE EXCLUSÃO COM Z-INDEX MAIS ALTO */}
+      {/* ⭐ MODAL DE EXCLUSÃO COM Z-INDEX MAIS ALTO E HANDLERS CORRETOS */}
       {showDeleteModal && (
         <DeleteTravelModal
           travel={travel}
-          onClose={() => setShowDeleteModal(false)}
+          onClose={handleCloseDeleteModal}
           onDeleted={handleAlbumDeleted}
           travelService={travelService}
         />
