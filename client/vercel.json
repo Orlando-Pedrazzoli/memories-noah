@@ -4,10 +4,5 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ],
-  "env": {
-    "VITE_API_URL": "https://memories-noah-api.vercel.app/api",
-    "VITE_MAPBOX_TOKEN": "pk.eyJ1Ijoib3JsYW5kby1wZWRyYXp6b2xpMTIzNCIsImEiOiJjbWR2ajJkemYxanNkMmxzYjVmZjd4cXBwIn0.4O3X5WUpKgxm65KxrDK62g",
-    "VITE_CLOUDINARY_CLOUD_NAME": "dy2cjyhp6"
-  }
+  ]
 }
