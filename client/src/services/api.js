@@ -1,11 +1,40 @@
-// client/src/services/api.js - VERSÃO CORRIGIDA COMPLETA
+// client/src/services/api.js - VERSÃO CORRIGIDA COM FALLBACK
 
 import axios from 'axios';
 import Cookies from 'js-cookie';
 
-const API_URL = import.meta.env.VITE_API_URL;
+// ⭐ CORREÇÃO: Adicionar fallback para produção quando VITE_API_URL não estiver definido
+const getApiUrl = () => {
+  // Se VITE_API_URL está definido, usar
+  if (import.meta.env.VITE_API_URL) {
+    console.log('🌐 Usando VITE_API_URL:', import.meta.env.VITE_API_URL);
+    return import.meta.env.VITE_API_URL;
+  }
 
-console.log('🌐 API_URL configurada:', API_URL);
+  // Fallback baseado no ambiente
+  if (import.meta.env.PROD) {
+    // Em produção, usar a mesma origem + /api
+    const prodUrl = `${window.location.origin}/api`;
+    console.log('🏭 Produção sem VITE_API_URL, usando fallback:', prodUrl);
+    return prodUrl;
+  }
+
+  // Desenvolvimento
+  const devUrl = 'http://localhost:3001/api';
+  console.log('🛠️ Desenvolvimento, usando:', devUrl);
+  return devUrl;
+};
+
+const API_URL = getApiUrl();
+
+console.log('🌐 API_URL final configurada:', API_URL);
+console.log('🏭 Ambiente:', import.meta.env.MODE);
+console.log('🔧 Variáveis disponíveis:', {
+  VITE_API_URL: import.meta.env.VITE_API_URL,
+  MODE: import.meta.env.MODE,
+  PROD: import.meta.env.PROD,
+  DEV: import.meta.env.DEV,
+});
 
 // Create axios instance
 const api = axios.create({
@@ -17,7 +46,9 @@ const api = axios.create({
 api.interceptors.request.use(
   config => {
     console.log(
-      `📤 Fazendo requisição: ${config.method?.toUpperCase()} ${config.url}`
+      `📤 Fazendo requisição: ${config.method?.toUpperCase()} ${
+        config.baseURL
+      }${config.url}`
     );
 
     const token = Cookies.get('memory-token');
@@ -68,7 +99,28 @@ api.interceptors.response.use(
       data: error.response?.data,
       url: error.config?.url,
       method: error.config?.method,
+      baseURL: error.config?.baseURL,
     });
+
+    // ⭐ DETECTAR HTML SENDO RETORNADO EM VEZ DE JSON
+    if (
+      error.response?.data &&
+      typeof error.response.data === 'string' &&
+      error.response.data.includes('<!DOCTYPE')
+    ) {
+      console.error('🚨 RECEBENDO HTML EM VEZ DE JSON!');
+      console.error(
+        '🔍 URL problemática:',
+        error.config?.baseURL + error.config?.url
+      );
+      console.error('📄 Conteúdo HTML:', error.response.data.substring(0, 200));
+
+      import('react-hot-toast').then(({ default: toast }) => {
+        toast.error(
+          'Erro de roteamento da API. Verificar configuração do servidor.'
+        );
+      });
+    }
 
     // ⭐ TRATAMENTO ESPECÍFICO DE ERROS
     if (error.response?.status === 401) {
@@ -570,7 +622,8 @@ export const diagnosticService = {
   logEnvironmentInfo: () => {
     const info = {
       environment: {
-        API_URL: import.meta.env.VITE_API_URL,
+        API_URL: API_URL,
+        VITE_API_URL: import.meta.env.VITE_API_URL,
         MODE: import.meta.env.MODE,
         DEV: import.meta.env.DEV,
         PROD: import.meta.env.PROD,
