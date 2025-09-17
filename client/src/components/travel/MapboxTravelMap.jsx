@@ -1,4 +1,4 @@
-// client/src/components/travel/MapboxTravelMap.jsx - VERSÃO MELHORADA
+// client/src/components/travel/MapboxTravelMap.jsx - VERSÃO COMPLETA MELHORADA
 
 import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
@@ -181,87 +181,122 @@ const MapboxTravelMap = ({
     }
   }, [is3D, mapLoaded]);
 
-  // ⭐ FUNÇÃO PARA CRIAR MARKER ELEMENT COM TOOLTIP
+  // ⭐ FUNÇÃO PARA CRIAR MARKER ELEMENT COM TOOLTIP MELHORADO
   const createMarkerElement = (markerData, index) => {
     const el = document.createElement('div');
     el.className = 'custom-marker';
     el.style.position = 'relative';
+
+    // ⭐ ÍCONE MAIOR E MAIS VISÍVEL
     el.innerHTML = `
       <div class="marker-container" style="
-        width: 60px; 
-        height: 60px; 
+        width: 80px; 
+        height: 80px; 
         position: relative;
         cursor: pointer;
         transition: all 0.3s ease;
+        transform: translateX(-40px) translateY(-40px);
       ">
+        <!-- Pulsação animada -->
         <div class="marker-pulse" style="
           position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
+          top: 10px;
+          left: 10px;
+          width: 60px;
+          height: 60px;
           border-radius: 50%;
-          background: rgba(239, 68, 68, 0.3);
+          background: rgba(239, 68, 68, 0.4);
           animation: pulse 2s infinite;
         "></div>
+        
+        <!-- Pin principal -->
         <div class="marker-pin" style="
           position: absolute;
-          top: 8px;
-          left: 8px;
-          width: 44px;
-          height: 44px;
+          top: 15px;
+          left: 15px;
+          width: 50px;
+          height: 50px;
           background: linear-gradient(135deg, #ef4444, #dc2626);
-          border-radius: 50%;
+          border-radius: 50% 50% 50% 0;
+          transform: rotate(-45deg);
           display: flex;
           align-items: center;
           justify-content: center;
           color: white;
           font-weight: bold;
-          font-size: 16px;
-          box-shadow: 0 6px 16px rgba(0,0,0,0.4);
-          border: 4px solid white;
+          font-size: 18px;
+          box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+          border: 3px solid white;
         ">
-          ${markerData.imageCount || '📍'}
+          <span style="transform: rotate(45deg);">
+            ${markerData.imageCount || '📍'}
+          </span>
         </div>
         
-        <!-- Tooltip on Hover -->
+        <!-- Label sempre visível -->
+        <div class="marker-label" style="
+          position: absolute;
+          bottom: -25px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(0,0,0,0.85);
+          color: white;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: 600;
+          white-space: nowrap;
+          pointer-events: none;
+          z-index: 10;
+          max-width: 150px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        ">
+          ${markerData.name}
+        </div>
+        
+        <!-- Tooltip detalhado ao passar mouse -->
         <div class="marker-tooltip" style="
           position: absolute;
-          bottom: 70px;
+          bottom: 100px;
           left: 50%;
           transform: translateX(-50%) scale(0);
           opacity: 0;
           background: linear-gradient(135deg, rgba(31, 41, 55, 0.98), rgba(17, 24, 39, 0.98));
           color: white;
-          padding: 14px 18px;
+          padding: 16px;
           border-radius: 12px;
           white-space: nowrap;
           font-size: 14px;
-          font-weight: 500;
-          box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+          box-shadow: 0 10px 40px rgba(0,0,0,0.6);
           backdrop-filter: blur(12px);
-          z-index: 9999;
+          z-index: 1000;
           transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
           pointer-events: none;
-          min-width: 250px;
+          min-width: 280px;
         ">
-          <div style="font-weight: bold; margin-bottom: 6px; font-size: 16px; color: #fbbf24;">
+          <div style="font-weight: bold; font-size: 16px; color: #fbbf24; margin-bottom: 8px;">
             ${markerData.name}
           </div>
           <div style="font-size: 13px; color: #e5e7eb; margin-bottom: 4px;">
-            📍 ${
-              markerData.location
-                ? markerData.location.split(',')[0].trim()
-                : 'Local'
-            }
+            📍 ${markerData.location || 'Local desconhecido'}
           </div>
           <div style="font-size: 13px; color: #e5e7eb; margin-bottom: 4px;">
             📸 ${markerData.imageCount} ${
       markerData.imageCount === 1 ? 'foto' : 'fotos'
     }
           </div>
-          <div style="font-size: 13px; color: #86efac; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
-            Clique para ver o álbum completo
+          ${
+            markerData.date
+              ? `
+          <div style="font-size: 13px; color: #e5e7eb; margin-bottom: 8px;">
+            📅 ${new Date(markerData.date).toLocaleDateString('pt-BR')}
+          </div>
+          `
+              : ''
+          }
+          <div style="font-size: 13px; color: #86efac; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
+            Clique para ver o álbum
           </div>
           
           <!-- Arrow -->
@@ -327,7 +362,7 @@ const MapboxTravelMap = ({
       if (markerPin) {
         markerPin.style.background =
           'linear-gradient(135deg, #ef4444, #dc2626)';
-        markerPin.style.boxShadow = '0 6px 16px rgba(0,0,0,0.4)';
+        markerPin.style.boxShadow = '0 8px 20px rgba(0,0,0,0.5)';
       }
     });
 
@@ -384,9 +419,17 @@ const MapboxTravelMap = ({
     markersRefs.current = {};
 
     // Filtrar markers válidos
-    const validMarkers = markers.filter(marker =>
-      isValidCoordinate(marker.coordinates)
-    );
+    const validMarkers = markers.filter(marker => {
+      const valid = isValidCoordinate(marker.coordinates);
+      if (!valid && marker.name) {
+        console.warn(
+          '⚠️ Marker sem coordenadas válidas:',
+          marker.name,
+          marker.coordinates
+        );
+      }
+      return valid;
+    });
 
     if (validMarkers.length === 0) {
       console.warn('⚠️ Nenhum marker válido para exibir');
@@ -394,11 +437,15 @@ const MapboxTravelMap = ({
       return;
     }
 
+    console.log('✅ Markers válidos para exibir:', validMarkers.length);
+
     // ⭐ ADICIONAR NOVOS MARKERS
     validMarkers.forEach((markerData, index) => {
       try {
-        // Converter coordenadas: [lat, lng] -> [lng, lat]
+        // IMPORTANTE: Converter coordenadas [lat, lng] para [lng, lat] para Mapbox
         const lngLat = [markerData.coordinates[1], markerData.coordinates[0]];
+
+        console.log(`📍 Adicionando marker ${markerData.name} em:`, lngLat);
 
         // Criar elemento do marker
         const el = createMarkerElement(markerData, index);
@@ -406,7 +453,7 @@ const MapboxTravelMap = ({
         // Criar marker no mapa
         const marker = new mapboxgl.Marker({
           element: el,
-          anchor: 'bottom',
+          anchor: 'center',
         })
           .setLngLat(lngLat)
           .addTo(map.current);
@@ -561,7 +608,7 @@ const MapboxTravelMap = ({
               bounds.extend([marker.coordinates[1], marker.coordinates[0]]);
             });
             map.current.fitBounds(bounds, {
-              padding: 100,
+              padding: { top: 100, bottom: 100, left: 100, right: 100 },
               maxZoom: 8,
               duration: 2000,
             });
@@ -584,7 +631,7 @@ const MapboxTravelMap = ({
       m => (m.id || m.travelId) === selectedTravelId
     );
 
-    if (markerData) {
+    if (markerData && markerData.coordinates) {
       map.current.flyTo({
         center: [markerData.coordinates[1], markerData.coordinates[0]],
         zoom: 10,
@@ -731,6 +778,24 @@ const MapboxTravelMap = ({
           background: rgba(0, 0, 0, 0.3) !important;
           border-radius: 50% !important;
           margin: 8px !important;
+        }
+
+        .custom-marker {
+          animation: bounce 2s infinite;
+        }
+
+        .custom-marker:hover {
+          animation: none;
+        }
+
+        @keyframes bounce {
+          0%,
+          100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-10px);
+          }
         }
       `}</style>
     </div>

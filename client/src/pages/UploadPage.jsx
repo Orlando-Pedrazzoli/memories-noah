@@ -1,4 +1,4 @@
-// client/src/pages/UploadPage.jsx - VERSÃO CORRIGIDA
+// client/src/pages/UploadPage.jsx - VERSÃO COMPLETA COM FLAGS DE RELOAD
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -158,7 +158,7 @@ const UploadPage = () => {
           throw new Error(response.error || 'Falha no upload de memórias');
         }
       } else {
-        // ⭐ UPLOAD DE VIAGEM
+        // ⭐ UPLOAD DE VIAGEM COM FLAGS MELHORADAS
         setUploadProgress({
           step: 2,
           message: 'Criando álbum de viagem...',
@@ -219,12 +219,18 @@ const UploadPage = () => {
             if (response.marker.hasCoordinates) {
               toast.success(
                 `Álbum "${data.travelName}" criado e adicionado ao mapa!`,
-                { duration: 4000 }
+                {
+                  duration: 4000,
+                  icon: '🗺️',
+                }
               );
             } else {
               toast(
                 `Álbum "${data.travelName}" criado! Localização "${data.location}" não foi encontrada no mapa.`,
-                { duration: 6000, icon: '⚠️' }
+                {
+                  duration: 6000,
+                  icon: '⚠️',
+                }
               );
             }
           } else {
@@ -236,10 +242,17 @@ const UploadPage = () => {
           // ⭐ LIMPAR COORDENADAS TEMPORÁRIAS
           delete window.selectedLocationCoords;
 
+          // ⭐ NAVEGAR COM FLAGS DE RELOAD
+          const travelId = data.travelName.toLowerCase().replace(/\s+/g, '-');
+
           setTimeout(() => {
             navigate('/travels', {
               replace: true,
-              state: { fromUpload: true },
+              state: {
+                fromUpload: true,
+                newTravelId: response.travel?.id || travelId,
+                forceReload: true, // Flag para forçar reload completo
+              },
             });
           }, 2000);
 

@@ -1,7 +1,7 @@
-// client/src/pages/TravelsPage.jsx - VERSÃO MELHORADA
+// client/src/pages/TravelsPage.jsx - VERSÃO COMPLETA COM RELOAD AUTOMÁTICO
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { travelService } from '../services/api';
 import Navbar from '../components/layout/Navbar';
 import Footer from '../components/layout/Footer';
@@ -22,11 +22,13 @@ import {
   Info,
   AlertCircle,
   Trash2,
+  ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const TravelsPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [travels, setTravels] = useState([]);
   const [markers, setMarkers] = useState([]);
   const [selectedTravel, setSelectedTravel] = useState(null);
@@ -34,88 +36,123 @@ const TravelsPage = () => {
   const [showAlbum, setShowAlbum] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [viewMode, setViewMode] = useState('cards'); // 'cards' or 'list'
+  const [viewMode, setViewMode] = useState('cards');
   const [selectedTravelId, setSelectedTravelId] = useState(null);
   const [showStats, setShowStats] = useState(true);
 
-  // ⭐ FUNÇÃO DE CARREGAMENTO DE DADOS
-  const loadTravelsData = useCallback(async (showToast = false) => {
-    try {
-      if (showToast) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
+  // ⭐ FUNÇÃO DE CARREGAMENTO DE DADOS COM FORCE RELOAD
+  const loadTravelsData = useCallback(
+    async (showToast = false, forceReload = false) => {
+      try {
+        if (showToast || forceReload) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
 
-      console.log('🗺️ Carregando dados de viagens...');
+        console.log('🗺️ Carregando dados de viagens...', { forceReload });
 
-      // Carregar viagens e marcadores em paralelo
-      const [travelsResponse, markersResponse] = await Promise.all([
-        travelService.getAllTravels(),
-        travelService.getTravelMarkers(),
-      ]);
+        // Carregar viagens e marcadores em paralelo (com bypass de cache se forceReload)
+        const [travelsResponse, markersResponse] = await Promise.all([
+          travelService.getAllTravels(forceReload),
+          travelService.getTravelMarkers(forceReload),
+        ]);
 
-      if (travelsResponse.success) {
-        console.log('✅ Viagens carregadas:', travelsResponse.travels.length);
-        setTravels(travelsResponse.travels || []);
+        if (travelsResponse.success) {
+          console.log('✅ Viagens carregadas:', travelsResponse.travels.length);
 
-        // Ordenar por data mais recente
-        const sortedTravels = (travelsResponse.travels || []).sort((a, b) => {
-          const dateA = a.date ? new Date(a.date) : new Date(0);
-          const dateB = b.date ? new Date(b.date) : new Date(0);
-          return dateB - dateA;
-        });
-        setTravels(sortedTravels);
-      } else {
-        console.error('❌ Falha ao carregar viagens');
-        setTravels([]);
-      }
+          // Ordenar por data mais recente
+          const sortedTravels = (travelsResponse.travels || []).sort((a, b) => {
+            const dateA = a.date ? new Date(a.date) : new Date(0);
+            const dateB = b.date ? new Date(b.date) : new Date(0);
+            return dateB - dateA;
+          });
+          setTravels(sortedTravels);
+        } else {
+          console.error('❌ Falha ao carregar viagens');
+          setTravels([]);
+        }
 
-      if (markersResponse.success) {
-        console.log(
-          '✅ Marcadores carregados:',
-          markersResponse.markers.length
-        );
-
-        // Validar marcadores e adicionar dados extras
-        const enrichedMarkers = (markersResponse.markers || []).map(marker => {
-          const travel = travelsResponse.travels?.find(
-            t => t.id === marker.travelId
+        if (markersResponse.success) {
+          console.log(
+            '✅ Marcadores carregados:',
+            markersResponse.markers.length
           );
-          return {
-            ...marker,
-            coverImage: travel?.coverImage || travel?.images?.[0]?.url,
-            date: marker.date || travel?.date,
-          };
-        });
 
-        setMarkers(enrichedMarkers);
-      } else {
-        console.error('❌ Falha ao carregar marcadores');
+          // Enriquecer marcadores com dados das viagens
+          const enrichedMarkers = (markersResponse.markers || []).map(
+            marker => {
+              const travel = travelsResponse.travels?.find(
+                t => t.id === marker.travelId
+              );
+              return {
+                ...marker,
+                coverImage: travel?.coverImage || travel?.images?.[0]?.url,
+                date: marker.date || travel?.date,
+                imageCount: marker.imageCount || travel?.imageCount || 0,
+              };
+            }
+          );
+
+          setMarkers(enrichedMarkers);
+        } else {
+          console.error('❌ Falha ao carregar marcadores');
+          setMarkers([]);
+        }
+
+        if (showToast) {
+          toast.success('Dados atualizados!');
+        }
+
+        if (forceReload) {
+          console.log('✅ Reload forçado completo');
+        }
+      } catch (error) {
+        console.error('❌ Erro ao carregar dados:', error);
+        toast.error('Erro ao carregar viagens');
+        setTravels([]);
         setMarkers([]);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
+    },
+    []
+  );
 
-      if (showToast) {
-        toast.success('Dados atualizados!');
-      }
-    } catch (error) {
-      console.error('❌ Erro ao carregar dados:', error);
-      toast.error('Erro ao carregar viagens');
-      setTravels([]);
-      setMarkers([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
+  // ⭐ DETECTAR NOVO UPLOAD E FORÇAR RELOAD
   useEffect(() => {
-    loadTravelsData();
-  }, [loadTravelsData]);
+    const locationState = location.state;
 
-  // ⭐ FUNÇÃO DE REFRESH
+    if (locationState?.fromUpload || locationState?.forceReload) {
+      console.log('🔄 Detectado novo upload, forçando recarga...');
+
+      // Limpar estado da location para evitar reload infinito
+      window.history.replaceState({}, document.title);
+
+      // Forçar recarga completa com bypass de cache
+      setTimeout(() => {
+        loadTravelsData(false, true);
+      }, 500);
+
+      // Se houver novo travel, destacá-lo
+      if (locationState?.newTravelId) {
+        setSelectedTravelId(locationState.newTravelId);
+
+        // Mostrar toast de sucesso
+        toast.success('Nova viagem adicionada ao mapa!', {
+          duration: 4000,
+          icon: '🗺️',
+        });
+      }
+    } else {
+      loadTravelsData();
+    }
+  }, [location.state, loadTravelsData]);
+
+  // ⭐ FUNÇÃO DE REFRESH MANUAL
   const handleRefresh = () => {
-    loadTravelsData(true);
+    loadTravelsData(true, true);
   };
 
   // ⭐ HANDLER PARA EXCLUSÃO DE ÁLBUM
@@ -144,7 +181,7 @@ const TravelsPage = () => {
     [selectedTravel]
   );
 
-  // ⭐ HANDLER PARA CLIQUE NO MARCADOR
+  // ⭐ HANDLER PARA CLIQUE NO MARCADOR DO MAPA
   const handleMarkerClick = async marker => {
     console.log('📍 Marcador clicado:', marker);
 
@@ -153,7 +190,9 @@ const TravelsPage = () => {
 
     // Buscar dados completos da viagem
     try {
+      setLoading(true);
       const travelData = await travelService.getTravelById(marker.travelId);
+
       if (travelData.success) {
         setSelectedTravel(travelData.travel);
         setShowAlbum(true);
@@ -169,10 +208,12 @@ const TravelsPage = () => {
       } else {
         toast.error('Erro ao carregar álbum da viagem');
       }
+    } finally {
+      setLoading(false);
     }
   };
 
-  // ⭐ HANDLER PARA CLIQUE NO CARD
+  // ⭐ HANDLER PARA CLIQUE NO CARD DE VIAGEM
   const handleTravelCardClick = travel => {
     setSelectedTravel(travel);
     setSelectedTravelId(travel.id);
@@ -207,7 +248,10 @@ const TravelsPage = () => {
     countries: new Set(
       validMarkers
         .filter(m => m.location)
-        .map(m => m.location.split(',').pop()?.trim())
+        .map(m => {
+          const parts = m.location.split(',');
+          return parts[parts.length - 1]?.trim();
+        })
         .filter(Boolean)
     ).size,
   };
