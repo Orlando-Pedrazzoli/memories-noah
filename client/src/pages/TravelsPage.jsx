@@ -1,32 +1,44 @@
-// client/src/pages/TravelsPage.jsx - VERSÃO COM MAPBOX 3D
+// client/src/pages/TravelsPage.jsx - VERSÃO MELHORADA
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { travelService } from '../services/api';
 import Navbar from '../components/layout/Navbar';
 import Footer from '../components/layout/Footer';
 import TravelAlbum from '../components/travel/TravelAlbum';
-import MapboxTravelMap from '../components/travel/MapboxTravelMap'; // ⭐ NOVO IMPORT
+import MapboxTravelMap from '../components/travel/MapboxTravelMap';
 import {
   MapPin,
   ImageIcon,
   Calendar,
   Loader2,
   RefreshCw,
-  Trash2,
+  Plus,
   Globe,
+  Filter,
+  Search,
+  Grid,
+  List,
+  Info,
+  AlertCircle,
+  Trash2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const TravelsPage = () => {
+  const navigate = useNavigate();
   const [travels, setTravels] = useState([]);
   const [markers, setMarkers] = useState([]);
   const [selectedTravel, setSelectedTravel] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showAlbum, setShowAlbum] = useState(false);
-  const [debugInfo, setDebugInfo] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState('cards'); // 'cards' or 'list'
+  const [selectedTravelId, setSelectedTravelId] = useState(null);
+  const [showStats, setShowStats] = useState(true);
 
-  // ⭐ USAR useCallback PARA FUNÇÃO DE CARREGAMENTO
+  // ⭐ FUNÇÃO DE CARREGAMENTO DE DADOS
   const loadTravelsData = useCallback(async (showToast = false) => {
     try {
       if (showToast) {
@@ -35,50 +47,51 @@ const TravelsPage = () => {
         setLoading(true);
       }
 
-      setDebugInfo('🗺️ Carregando dados...');
+      console.log('🗺️ Carregando dados de viagens...');
 
-      console.log('🗺️ Loading travels data...');
-
-      // Load travels and markers in parallel
+      // Carregar viagens e marcadores em paralelo
       const [travelsResponse, markersResponse] = await Promise.all([
         travelService.getAllTravels(),
         travelService.getTravelMarkers(),
       ]);
 
       if (travelsResponse.success) {
-        console.log('✅ Travels loaded:', travelsResponse.travels.length);
-        setTravels(travelsResponse.travels);
+        console.log('✅ Viagens carregadas:', travelsResponse.travels.length);
+        setTravels(travelsResponse.travels || []);
+
+        // Ordenar por data mais recente
+        const sortedTravels = (travelsResponse.travels || []).sort((a, b) => {
+          const dateA = a.date ? new Date(a.date) : new Date(0);
+          const dateB = b.date ? new Date(b.date) : new Date(0);
+          return dateB - dateA;
+        });
+        setTravels(sortedTravels);
       } else {
-        console.error('❌ Failed to load travels:', travelsResponse);
+        console.error('❌ Falha ao carregar viagens');
         setTravels([]);
       }
 
       if (markersResponse.success) {
-        console.log('✅ Markers loaded:', markersResponse.markers.length);
-        setMarkers(markersResponse.markers);
-
-        // ⭐ DEBUG: Verificar coordenadas
-        const validMarkers = markersResponse.markers.filter(
-          m =>
-            m.coordinates &&
-            Array.isArray(m.coordinates) &&
-            m.coordinates.length === 2 &&
-            !isNaN(m.coordinates[0]) &&
-            !isNaN(m.coordinates[1])
+        console.log(
+          '✅ Marcadores carregados:',
+          markersResponse.markers.length
         );
 
-        setDebugInfo(
-          `✅ ${validMarkers.length}/${markersResponse.markers.length} marcadores válidos`
-        );
-
-        if (validMarkers.length !== markersResponse.markers.length) {
-          console.warn(
-            '⚠️ Alguns markers têm coordenadas inválidas:',
-            markersResponse.markers.filter(m => !validMarkers.includes(m))
+        // Validar marcadores e adicionar dados extras
+        const enrichedMarkers = (markersResponse.markers || []).map(marker => {
+          const travel = travelsResponse.travels?.find(
+            t => t.id === marker.travelId
           );
-        }
+          return {
+            ...marker,
+            coverImage: travel?.coverImage || travel?.images?.[0]?.url,
+            date: marker.date || travel?.date,
+          };
+        });
+
+        setMarkers(enrichedMarkers);
       } else {
-        console.error('❌ Failed to load markers:', markersResponse);
+        console.error('❌ Falha ao carregar marcadores');
         setMarkers([]);
       }
 
@@ -86,15 +99,8 @@ const TravelsPage = () => {
         toast.success('Dados atualizados!');
       }
     } catch (error) {
-      console.error('❌ Error loading travels data:', error);
-      setDebugInfo('❌ Erro ao carregar dados');
-
-      if (showToast) {
-        toast.error('Erro ao recarregar dados');
-      } else {
-        toast.error('Erro ao carregar viagens');
-      }
-
+      console.error('❌ Erro ao carregar dados:', error);
+      toast.error('Erro ao carregar viagens');
       setTravels([]);
       setMarkers([]);
     } finally {
@@ -107,97 +113,80 @@ const TravelsPage = () => {
     loadTravelsData();
   }, [loadTravelsData]);
 
-  // ⭐ FUNÇÃO PARA RECARREGAR DADOS
+  // ⭐ FUNÇÃO DE REFRESH
   const handleRefresh = () => {
     loadTravelsData(true);
   };
 
-  // ⭐ FUNÇÃO PARA LIMPEZA DE ÁLBUNS ÓRFÃOS (desenvolvimento)
-  const handleCleanupOrphaned = async () => {
-    if (process.env.NODE_ENV === 'production') {
-      toast.error('Função disponível apenas em desenvolvimento');
-      return;
-    }
-
-    try {
-      const response = await travelService.cleanupOrphanedAlbums();
-      if (response.success) {
-        toast.success(
-          `${response.details.totalCleaned} álbuns órfãos removidos`
-        );
-        loadTravelsData();
-      }
-    } catch (error) {
-      console.error('Erro na limpeza:', error);
-      toast.error('Erro ao limpar álbuns órfãos');
-    }
-  };
-
-  // ⭐ HANDLER MELHORADO PARA EXCLUSÃO DE ÁLBUM
+  // ⭐ HANDLER PARA EXCLUSÃO DE ÁLBUM
   const handleTravelDeleted = useCallback(
     (deletedTravelId, details) => {
-      console.log('🗑️ Álbum deletado:', deletedTravelId, details);
+      console.log('🗑️ Álbum excluído:', deletedTravelId, details);
 
-      if (details?.cleanupComplete) {
-        console.log('✅ Limpeza completa - removendo da interface');
+      // Atualizar lista de viagens
+      setTravels(prevTravels =>
+        prevTravels.filter(travel => travel.id !== deletedTravelId)
+      );
 
-        setTravels(prevTravels => {
-          const updated = prevTravels.filter(
-            travel => travel.id !== deletedTravelId
-          );
-          console.log('📋 Travels atualizados:', updated.length, 'restantes');
-          return updated;
-        });
+      // Atualizar marcadores
+      setMarkers(prevMarkers =>
+        prevMarkers.filter(marker => marker.travelId !== deletedTravelId)
+      );
 
-        setMarkers(prevMarkers => {
-          const updated = prevMarkers.filter(
-            marker => marker.travelId !== deletedTravelId
-          );
-          console.log('🗺️ Markers atualizados:', updated.length, 'restantes');
-          return updated;
-        });
-
-        setDebugInfo('✅ Álbum excluído - interface atualizada');
-        toast.success('Álbum removido completamente!', { duration: 3000 });
-      } else {
-        console.warn(
-          '⚠️ Limpeza incompleta - recarregando dados para sincronizar'
-        );
-        setDebugInfo('⚠️ Limpeza incompleta - recarregando...');
-
-        setTimeout(() => {
-          loadTravelsData(true);
-        }, 1000);
-
-        toast.warning('Álbum removido - sincronizando interface...', {
-          duration: 3000,
-        });
+      // Fechar modal se estiver aberto
+      if (selectedTravel?.id === deletedTravelId) {
+        setShowAlbum(false);
+        setSelectedTravel(null);
       }
+
+      toast.success('Álbum removido com sucesso!');
     },
-    [loadTravelsData]
+    [selectedTravel]
   );
 
-  // ⭐ HANDLER PARA CLICK NO MARKER DO MAPBOX
+  // ⭐ HANDLER PARA CLIQUE NO MARCADOR
   const handleMarkerClick = async marker => {
+    console.log('📍 Marcador clicado:', marker);
+
+    // Destacar o marcador selecionado
+    setSelectedTravelId(marker.travelId || marker.id);
+
+    // Buscar dados completos da viagem
     try {
-      console.log('🎯 Clicked marker:', marker);
       const travelData = await travelService.getTravelById(marker.travelId);
       if (travelData.success) {
         setSelectedTravel(travelData.travel);
         setShowAlbum(true);
       }
     } catch (error) {
-      console.error('Error loading travel details:', error);
-      toast.error('Erro ao carregar álbum da viagem');
+      console.error('Erro ao carregar álbum:', error);
+
+      // Tentar usar dados locais como fallback
+      const localTravel = travels.find(t => t.id === marker.travelId);
+      if (localTravel) {
+        setSelectedTravel(localTravel);
+        setShowAlbum(true);
+      } else {
+        toast.error('Erro ao carregar álbum da viagem');
+      }
     }
   };
 
+  // ⭐ HANDLER PARA CLIQUE NO CARD
   const handleTravelCardClick = travel => {
     setSelectedTravel(travel);
+    setSelectedTravelId(travel.id);
     setShowAlbum(true);
   };
 
-  // ⭐ FILTRAR MARKERS VÁLIDOS PARA O MAPBOX
+  // ⭐ FILTRAR VIAGENS PELA BUSCA
+  const filteredTravels = travels.filter(
+    travel =>
+      travel.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      travel.location?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // ⭐ FILTRAR MARCADORES VÁLIDOS
   const validMarkers = markers.filter(
     marker =>
       marker.coordinates &&
@@ -207,349 +196,405 @@ const TravelsPage = () => {
       !isNaN(marker.coordinates[1])
   );
 
+  // ⭐ CALCULAR ESTATÍSTICAS
+  const stats = {
+    totalTravels: travels.length,
+    totalPhotos: travels.reduce(
+      (acc, travel) => acc + (travel.imageCount || 0),
+      0
+    ),
+    markersOnMap: validMarkers.length,
+    countries: new Set(
+      validMarkers
+        .filter(m => m.location)
+        .map(m => m.location.split(',').pop()?.trim())
+        .filter(Boolean)
+    ).size,
+  };
+
   return (
     <div className='min-h-screen bg-gray-50'>
       <Navbar />
 
       <main className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8'>
-        {/* Header */}
+        {/* ⭐ HEADER MELHORADO */}
         <div className='mb-8'>
-          <div className='flex items-center justify-between'>
+          <div className='flex flex-col md:flex-row md:items-center md:justify-between gap-4'>
             <div className='flex items-center space-x-3'>
-              <Globe className='h-6 w-6 text-primary-600' />
-              <h1 className='text-3xl font-bold text-gray-900'>
-                Nossas Viagens
-              </h1>
-              <div className='bg-gradient-to-r from-blue-500 to-purple-600 text-white px-3 py-1 rounded-full text-xs font-medium'>
-                Mapa 3D
+              <div className='p-2 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg'>
+                <Globe className='h-6 w-6 text-white' />
+              </div>
+              <div>
+                <h1 className='text-3xl font-bold text-gray-900'>
+                  Nossas Viagens
+                </h1>
+                <p className='text-gray-600 mt-1'>
+                  Explore os lugares que visitamos em família
+                </p>
               </div>
             </div>
 
-            <div className='flex items-center space-x-2'>
-              {/* ⭐ BOTÃO DE LIMPEZA (desenvolvimento) */}
-              {process.env.NODE_ENV === 'development' && (
-                <button
-                  onClick={handleCleanupOrphaned}
-                  className='flex items-center space-x-2 px-3 py-2 bg-orange-100 border border-orange-300 rounded-md hover:bg-orange-200 transition-colors text-sm'
-                  disabled={loading || refreshing}
-                >
-                  <Trash2 className='h-4 w-4' />
-                  <span>Limpar Órfãos</span>
-                </button>
-              )}
+            <div className='flex items-center space-x-3'>
+              {/* Barra de busca */}
+              <div className='relative'>
+                <Search className='absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400' />
+                <input
+                  type='text'
+                  placeholder='Buscar viagens...'
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className='pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all'
+                />
+              </div>
 
-              {/* ⭐ BOTÃO DE REFRESH */}
+              {/* Botão de refresh */}
               <button
                 onClick={handleRefresh}
-                className='flex items-center space-x-2 px-3 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors'
                 disabled={loading || refreshing}
+                className='flex items-center space-x-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50'
               >
                 <RefreshCw
                   className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`}
                 />
-                <span className='text-sm'>
+                <span className='hidden sm:inline text-sm'>
                   {refreshing ? 'Atualizando...' : 'Atualizar'}
                 </span>
               </button>
+
+              {/* Botão de adicionar */}
+              <button
+                onClick={() => navigate('/upload')}
+                className='flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all shadow-md hover:shadow-lg'
+              >
+                <Plus className='h-4 w-4' />
+                <span className='hidden sm:inline'>Nova Viagem</span>
+              </button>
             </div>
           </div>
-
-          <p className='text-gray-600 mt-2'>
-            Explore os lugares que visitamos em um mapa 3D interativo
-          </p>
-
-          {/* ⭐ DEBUG INFO */}
-          {debugInfo && (
-            <div className='mt-2 text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded'>
-              {debugInfo}
-            </div>
-          )}
         </div>
 
         {loading ? (
-          <div className='flex items-center justify-center py-12'>
+          <div className='flex items-center justify-center py-32'>
             <div className='flex flex-col items-center space-y-4'>
-              <Loader2 className='h-8 w-8 animate-spin text-primary-600' />
-              <p className='text-gray-600'>Carregando viagens...</p>
+              <Loader2 className='h-12 w-12 animate-spin text-blue-600' />
+              <p className='text-gray-600 font-medium'>Carregando viagens...</p>
             </div>
           </div>
         ) : (
           <div className='grid grid-cols-1 lg:grid-cols-3 gap-8'>
-            {/* ⭐ MAPBOX 3D SECTION */}
+            {/* ⭐ SEÇÃO DO MAPA 3D */}
             <div className='lg:col-span-2'>
-              <div className='bg-white rounded-lg shadow-md overflow-hidden'>
-                <div className='p-4 border-b border-gray-200'>
-                  <h2 className='text-lg font-semibold text-gray-900 flex items-center space-x-2'>
-                    <Globe className='h-5 w-5 text-blue-600' />
-                    <span>Mapa Mundial 3D</span>
-                  </h2>
+              <div className='bg-white rounded-xl shadow-lg overflow-hidden'>
+                <div className='p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50'>
+                  <div className='flex items-center justify-between'>
+                    <h2 className='text-lg font-semibold text-gray-900 flex items-center space-x-2'>
+                      <Globe className='h-5 w-5 text-blue-600' />
+                      <span>Mapa Interativo 3D</span>
+                    </h2>
+                    {validMarkers.length > 0 && (
+                      <div className='text-sm text-gray-600'>
+                        {validMarkers.length}{' '}
+                        {validMarkers.length === 1 ? 'lugar' : 'lugares'}
+                      </div>
+                    )}
+                  </div>
                   <p className='text-sm text-gray-600 mt-1'>
-                    Clique nos marcadores para ver o álbum • Arraste para
-                    navegar • Scroll para zoom
-                    {validMarkers.length > 0 &&
-                      ` • ${validMarkers.length} ${
-                        validMarkers.length === 1 ? 'marcador' : 'marcadores'
-                      } no mapa`}
+                    Clique nos marcadores para explorar os álbuns
                   </p>
                 </div>
 
-                {/* ⭐ MAPBOX COMPONENT */}
+                {/* Mapa Mapbox */}
                 <div className='h-96 lg:h-[500px]'>
                   <MapboxTravelMap
                     markers={validMarkers}
                     onMarkerClick={handleMarkerClick}
                     loading={loading || refreshing}
+                    selectedTravelId={selectedTravelId}
                   />
                 </div>
 
-                {/* ⭐ INFO DE STATUS MELHORADA */}
-                <div className='p-4 bg-gradient-to-r from-gray-50 to-blue-50 border-t border-gray-200'>
-                  <div className='grid grid-cols-2 md:grid-cols-4 gap-4 text-sm'>
-                    <div className='text-center'>
-                      <div className='font-semibold text-gray-900'>
-                        {markers.length}
+                {/* Estatísticas do mapa */}
+                {showStats && (
+                  <div className='p-4 bg-gradient-to-r from-gray-50 to-blue-50 border-t border-gray-200'>
+                    <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
+                      <div className='text-center'>
+                        <div className='text-2xl font-bold text-gray-900'>
+                          {stats.totalTravels}
+                        </div>
+                        <div className='text-xs text-gray-600'>Viagens</div>
                       </div>
-                      <div className='text-gray-600'>Total</div>
-                    </div>
-                    <div className='text-center'>
-                      <div className='font-semibold text-green-600'>
-                        {validMarkers.length}
+                      <div className='text-center'>
+                        <div className='text-2xl font-bold text-blue-600'>
+                          {stats.markersOnMap}
+                        </div>
+                        <div className='text-xs text-gray-600'>No Mapa</div>
                       </div>
-                      <div className='text-gray-600'>No Mapa</div>
-                    </div>
-                    <div className='text-center'>
-                      <div className='font-semibold text-blue-600'>
-                        {
-                          new Set(
-                            validMarkers
-                              .map(m => m.location?.split(',').pop()?.trim())
-                              .filter(Boolean)
-                          ).size
-                        }
+                      <div className='text-center'>
+                        <div className='text-2xl font-bold text-purple-600'>
+                          {stats.countries}
+                        </div>
+                        <div className='text-xs text-gray-600'>Países</div>
                       </div>
-                      <div className='text-gray-600'>Países</div>
-                    </div>
-                    <div className='text-center'>
-                      <div className='font-semibold text-purple-600'>
-                        {travels.reduce(
-                          (acc, travel) => acc + travel.imageCount,
-                          0
-                        )}
+                      <div className='text-center'>
+                        <div className='text-2xl font-bold text-green-600'>
+                          {stats.totalPhotos}
+                        </div>
+                        <div className='text-xs text-gray-600'>Fotos</div>
                       </div>
-                      <div className='text-gray-600'>Fotos</div>
                     </div>
                   </div>
-
-                  {markers.length === 0 && (
-                    <div className='text-center mt-4 p-4 bg-blue-100 rounded-lg'>
-                      <p className='text-sm text-blue-800'>
-                        🗺️ Nenhuma viagem adicionada ainda. Crie sua primeira
-                        viagem para ver no mapa 3D!
-                      </p>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
             </div>
 
-            {/* Travel Cards Section */}
+            {/* ⭐ LISTA DE ÁLBUNS */}
             <div className='space-y-6'>
-              <div className='bg-white rounded-lg shadow-md p-6'>
-                <h2 className='text-lg font-semibold text-gray-900 mb-4'>
-                  Álbuns de Viagem
-                </h2>
+              {/* Controles de visualização */}
+              <div className='bg-white rounded-lg shadow-md p-4'>
+                <div className='flex items-center justify-between mb-4'>
+                  <h2 className='text-lg font-semibold text-gray-900'>
+                    Álbuns de Viagem
+                  </h2>
 
-                {travels.length > 0 ? (
-                  <div className='space-y-4'>
-                    {travels.map(travel => (
+                  {/* Toggle View Mode */}
+                  <div className='flex bg-gray-100 rounded-lg p-1'>
+                    <button
+                      onClick={() => setViewMode('cards')}
+                      className={`p-2 rounded transition-all ${
+                        viewMode === 'cards'
+                          ? 'bg-white text-blue-600 shadow-sm'
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                      title='Visualização em cards'
+                    >
+                      <Grid className='h-4 w-4' />
+                    </button>
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className={`p-2 rounded transition-all ${
+                        viewMode === 'list'
+                          ? 'bg-white text-blue-600 shadow-sm'
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                      title='Visualização em lista'
+                    >
+                      <List className='h-4 w-4' />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lista de viagens */}
+                {filteredTravels.length > 0 ? (
+                  <div
+                    className={viewMode === 'cards' ? 'space-y-4' : 'space-y-2'}
+                  >
+                    {filteredTravels.map(travel => (
                       <div
                         key={travel.id}
-                        className='border border-gray-200 rounded-lg p-4 hover:shadow-md transition-all duration-200 cursor-pointer group'
+                        className={`
+                          ${
+                            viewMode === 'cards'
+                              ? 'border border-gray-200 rounded-lg p-4 hover:shadow-md'
+                              : 'flex items-center p-3 hover:bg-gray-50 rounded-lg'
+                          }
+                          transition-all duration-200 cursor-pointer group
+                          ${
+                            selectedTravelId === travel.id
+                              ? 'ring-2 ring-blue-500 bg-blue-50'
+                              : ''
+                          }
+                        `}
                         onClick={() => handleTravelCardClick(travel)}
                       >
-                        {travel.coverImage && (
-                          <div className='aspect-video overflow-hidden rounded-md mb-3'>
-                            <img
-                              src={travel.coverImage}
-                              alt={travel.name}
-                              className='w-full h-full object-cover group-hover:scale-105 transition-transform duration-300'
-                            />
-                          </div>
-                        )}
+                        {viewMode === 'cards' ? (
+                          <>
+                            {/* Card View */}
+                            {travel.coverImage && (
+                              <div className='aspect-video overflow-hidden rounded-md mb-3'>
+                                <img
+                                  src={travel.coverImage}
+                                  alt={travel.name}
+                                  className='w-full h-full object-cover group-hover:scale-105 transition-transform duration-300'
+                                  loading='lazy'
+                                />
+                              </div>
+                            )}
 
-                        <h3 className='font-medium text-gray-900 mb-2 group-hover:text-primary-600 transition-colors'>
-                          {travel.name}
-                        </h3>
+                            <h3 className='font-medium text-gray-900 mb-2 group-hover:text-blue-600 transition-colors'>
+                              {travel.name}
+                            </h3>
 
-                        <div className='flex items-center justify-between text-sm text-gray-600 mb-2'>
-                          <div className='flex items-center space-x-1'>
-                            <ImageIcon className='h-4 w-4' />
-                            <span>{travel.imageCount} fotos</span>
-                          </div>
+                            <div className='space-y-2'>
+                              <div className='flex items-center justify-between text-sm text-gray-600'>
+                                <div className='flex items-center space-x-1'>
+                                  <ImageIcon className='h-4 w-4' />
+                                  <span>{travel.imageCount} fotos</span>
+                                </div>
 
-                          {travel.images.length > 0 && (
-                            <div className='flex items-center space-x-1'>
-                              <Calendar className='h-4 w-4' />
-                              <span>
-                                {new Date(
-                                  travel.images[0].created_at
-                                ).toLocaleDateString('pt-BR')}
-                              </span>
+                                {travel.date && (
+                                  <div className='flex items-center space-x-1'>
+                                    <Calendar className='h-4 w-4' />
+                                    <span>
+                                      {new Date(travel.date).toLocaleDateString(
+                                        'pt-BR',
+                                        {
+                                          month: 'short',
+                                          year: 'numeric',
+                                        }
+                                      )}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Status de localização */}
+                              <div className='flex items-center space-x-2 text-xs'>
+                                {travel.coordinates ? (
+                                  <span className='text-green-600 flex items-center bg-green-50 px-2 py-1 rounded-full'>
+                                    <Globe className='h-3 w-3 mr-1' />
+                                    No mapa
+                                  </span>
+                                ) : (
+                                  <span className='text-gray-400 flex items-center bg-gray-50 px-2 py-1 rounded-full'>
+                                    <MapPin className='h-3 w-3 mr-1' />
+                                    Sem localização
+                                  </span>
+                                )}
+                                {travel.location && (
+                                  <span
+                                    className='text-gray-500 truncate flex-1'
+                                    title={travel.location}
+                                  >
+                                    {travel.location.split(',')[0]}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          )}
-                        </div>
+                          </>
+                        ) : (
+                          <>
+                            {/* List View */}
+                            <div className='flex items-center flex-1'>
+                              {travel.coverImage && (
+                                <div className='w-16 h-16 rounded-lg overflow-hidden flex-shrink-0 mr-4'>
+                                  <img
+                                    src={travel.coverImage}
+                                    alt={travel.name}
+                                    className='w-full h-full object-cover'
+                                    loading='lazy'
+                                  />
+                                </div>
+                              )}
 
-                        {/* ⭐ STATUS DE COORDENADAS MELHORADO */}
-                        <div className='flex items-center space-x-2 text-xs'>
-                          {travel.coordinates ? (
-                            <span className='text-green-600 flex items-center bg-green-50 px-2 py-1 rounded-full'>
-                              <Globe className='h-3 w-3 mr-1' />
-                              No mapa 3D
-                            </span>
-                          ) : (
-                            <span className='text-gray-400 flex items-center bg-gray-50 px-2 py-1 rounded-full'>
-                              <MapPin className='h-3 w-3 mr-1' />
-                              Sem localização
-                            </span>
-                          )}
-                          {travel.location && (
-                            <span className='text-gray-500 truncate'>
-                              📍 {travel.location}
-                            </span>
-                          )}
-                        </div>
+                              <div className='flex-1'>
+                                <h3 className='font-medium text-gray-900 group-hover:text-blue-600 transition-colors'>
+                                  {travel.name}
+                                </h3>
+                                <div className='text-sm text-gray-600 mt-1'>
+                                  {travel.location?.split(',')[0]} •{' '}
+                                  {travel.imageCount} fotos
+                                </div>
+                              </div>
+
+                              <div className='flex items-center space-x-2'>
+                                {travel.coordinates && (
+                                  <Globe className='h-4 w-4 text-green-600' />
+                                )}
+                                <ChevronRight className='h-4 w-4 text-gray-400' />
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className='text-center py-8'>
-                    <Globe className='h-12 w-12 text-gray-400 mx-auto mb-4' />
-                    <h3 className='text-lg font-medium text-gray-900 mb-2'>
-                      Nenhuma viagem ainda
-                    </h3>
-                    <p className='text-gray-600 mb-4'>
-                      Crie seu primeiro álbum de viagem para aparecer no mapa 3D
-                    </p>
-                    <a
-                      href='/upload'
-                      className='inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-md hover:from-blue-700 hover:to-purple-700 transition-colors text-sm'
-                    >
-                      Adicionar Primeira Viagem
-                    </a>
+                  <div className='text-center py-12'>
+                    {searchTerm ? (
+                      <>
+                        <Search className='h-12 w-12 text-gray-400 mx-auto mb-4' />
+                        <h3 className='text-lg font-medium text-gray-900 mb-2'>
+                          Nenhuma viagem encontrada
+                        </h3>
+                        <p className='text-gray-600'>
+                          Tente buscar por outro termo
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <Globe className='h-12 w-12 text-gray-400 mx-auto mb-4' />
+                        <h3 className='text-lg font-medium text-gray-900 mb-2'>
+                          Nenhuma viagem ainda
+                        </h3>
+                        <p className='text-gray-600 mb-4'>
+                          Crie seu primeiro álbum de viagem
+                        </p>
+                        <button
+                          onClick={() => navigate('/upload')}
+                          className='inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all'
+                        >
+                          <Plus className='h-4 w-4 mr-2' />
+                          Adicionar Primeira Viagem
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
 
-              {/* ⭐ Statistics MELHORADAS */}
-              <div className='bg-white rounded-lg shadow-md p-6'>
-                <h3 className='text-lg font-semibold text-gray-900 mb-4'>
-                  Estatísticas Globais
-                </h3>
+              {/* ⭐ CARD DE ESTATÍSTICAS GLOBAIS */}
+              <div className='bg-gradient-to-br from-blue-600 to-purple-600 text-white rounded-lg shadow-lg p-6'>
+                <div className='flex items-center space-x-3 mb-4'>
+                  <Info className='h-6 w-6' />
+                  <h3 className='text-lg font-semibold'>Resumo das Viagens</h3>
+                </div>
 
-                <div className='space-y-4'>
-                  <div className='flex justify-between items-center p-3 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg'>
-                    <div className='flex items-center space-x-2'>
-                      <Globe className='h-4 w-4 text-blue-600' />
-                      <span className='text-gray-700'>Total de viagens:</span>
-                    </div>
-                    <span className='font-bold text-blue-600'>
-                      {travels.length}
+                <div className='space-y-3'>
+                  <div className='flex justify-between items-center p-3 bg-white bg-opacity-10 rounded-lg'>
+                    <span>Total de viagens</span>
+                    <span className='font-bold text-lg'>
+                      {stats.totalTravels}
                     </span>
                   </div>
-
-                  <div className='flex justify-between items-center p-3 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg'>
-                    <div className='flex items-center space-x-2'>
-                      <ImageIcon className='h-4 w-4 text-purple-600' />
-                      <span className='text-gray-700'>Total de fotos:</span>
-                    </div>
-                    <span className='font-bold text-purple-600'>
-                      {travels.reduce(
-                        (acc, travel) => acc + travel.imageCount,
-                        0
-                      )}
+                  <div className='flex justify-between items-center p-3 bg-white bg-opacity-10 rounded-lg'>
+                    <span>Fotos no total</span>
+                    <span className='font-bold text-lg'>
+                      {stats.totalPhotos}
                     </span>
                   </div>
-
-                  <div className='flex justify-between items-center p-3 bg-gradient-to-r from-green-50 to-green-100 rounded-lg'>
-                    <div className='flex items-center space-x-2'>
-                      <MapPin className='h-4 w-4 text-green-600' />
-                      <span className='text-gray-700'>No mapa 3D:</span>
-                    </div>
-                    <span className='font-bold text-green-600'>
-                      {validMarkers.length}
-                    </span>
+                  <div className='flex justify-between items-center p-3 bg-white bg-opacity-10 rounded-lg'>
+                    <span>Países visitados</span>
+                    <span className='font-bold text-lg'>{stats.countries}</span>
                   </div>
-
-                  <div className='flex justify-between items-center p-3 bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg'>
-                    <div className='flex items-center space-x-2'>
-                      <Calendar className='h-4 w-4 text-orange-600' />
-                      <span className='text-gray-700'>Países visitados:</span>
-                    </div>
-                    <span className='font-bold text-orange-600'>
-                      {new Set(
-                        validMarkers
-                          .filter(m => m.location)
-                          .map(m => m.location.split(',').pop()?.trim())
-                      ).size || 0}
+                  <div className='flex justify-between items-center p-3 bg-white bg-opacity-10 rounded-lg'>
+                    <span>Marcadores no mapa</span>
+                    <span className='font-bold text-lg'>
+                      {stats.markersOnMap}
                     </span>
                   </div>
                 </div>
 
-                {/* ⭐ MAPA PROGRESS BAR */}
-                {markers.length > 0 && (
-                  <div className='mt-4 p-3 bg-gray-50 rounded-lg'>
-                    <div className='flex justify-between text-xs text-gray-600 mb-1'>
-                      <span>Cobertura do Mapa</span>
-                      <span>
-                        {Math.round(
-                          (validMarkers.length / markers.length) * 100
-                        )}
-                        %
-                      </span>
-                    </div>
-                    <div className='w-full bg-gray-200 rounded-full h-2'>
-                      <div
-                        className='bg-gradient-to-r from-green-400 to-blue-500 h-2 rounded-full transition-all duration-500'
-                        style={{
-                          width: `${
-                            (validMarkers.length / markers.length) * 100
-                          }%`,
-                        }}
-                      ></div>
-                    </div>
+                {stats.markersOnMap < stats.totalTravels && (
+                  <div className='mt-4 p-3 bg-orange-500 bg-opacity-20 rounded-lg text-sm'>
+                    <AlertCircle className='h-4 w-4 inline mr-2' />
+                    {stats.totalTravels - stats.markersOnMap} viagens sem
+                    localização no mapa
                   </div>
                 )}
-              </div>
-
-              {/* ⭐ MAPBOX INFO CARD */}
-              <div className='bg-gradient-to-br from-blue-600 to-purple-600 text-white rounded-lg shadow-md p-6'>
-                <div className='flex items-center space-x-3 mb-3'>
-                  <Globe className='h-6 w-6' />
-                  <h3 className='text-lg font-semibold'>Mapa 3D Interativo</h3>
-                </div>
-                <p className='text-blue-100 text-sm mb-4'>
-                  Explore suas viagens em um mapa 3D com vista de satélite,
-                  rotação automática e controles avançados.
-                </p>
-                <div className='space-y-2 text-xs text-blue-100'>
-                  <div>🖱️ Arraste para mover o mapa</div>
-                  <div>🔍 Scroll para zoom</div>
-                  <div>📍 Clique nos markers para ver álbuns</div>
-                  <div>🎛️ Use os controles para mudar estilo</div>
-                </div>
               </div>
             </div>
           </div>
         )}
       </main>
 
-      {/* ⭐ TRAVEL ALBUM MODAL */}
+      {/* ⭐ MODAL DO ÁLBUM DE VIAGEM */}
       {showAlbum && selectedTravel && (
         <TravelAlbum
           travel={selectedTravel}
           onClose={() => {
             setShowAlbum(false);
             setSelectedTravel(null);
+            setSelectedTravelId(null);
           }}
           onTravelDeleted={handleTravelDeleted}
         />

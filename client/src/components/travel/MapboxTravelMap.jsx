@@ -1,9 +1,17 @@
-// client/src/components/travel/MapboxTravelMap.jsx - VERSÃO PARA PRODUÇÃO
+// client/src/components/travel/MapboxTravelMap.jsx - VERSÃO MELHORADA
 
 import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { MapPin, Image, Calendar, Navigation, AlertCircle } from 'lucide-react';
+import {
+  MapPin,
+  Image,
+  Calendar,
+  Navigation,
+  AlertCircle,
+  Globe,
+  Compass,
+} from 'lucide-react';
 
 // ⭐ CONFIGURAÇÃO ROBUSTA DE TOKEN
 const getMapboxToken = () => {
@@ -28,7 +36,12 @@ if (!MAPBOX_TOKEN || !MAPBOX_TOKEN.startsWith('pk.')) {
   console.log('✅ Token Mapbox configurado');
 }
 
-const MapboxTravelMap = ({ markers = [], onMarkerClick, loading = false }) => {
+const MapboxTravelMap = ({
+  markers = [],
+  onMarkerClick,
+  loading = false,
+  selectedTravelId = null,
+}) => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const markersRefs = useRef({});
@@ -39,6 +52,7 @@ const MapboxTravelMap = ({ markers = [], onMarkerClick, loading = false }) => {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState(null);
   const [markersLoaded, setMarkersLoaded] = useState(false);
+  const [hoveredMarkerId, setHoveredMarkerId] = useState(null);
 
   // ⭐ ESTILOS DE MAPA DISPONÍVEIS
   const mapStyles = [
@@ -67,7 +81,7 @@ const MapboxTravelMap = ({ markers = [], onMarkerClick, loading = false }) => {
 
   // ⭐ FUNÇÃO PARA VALIDAR COORDENADAS
   const isValidCoordinate = coord => {
-    const isValid =
+    return (
       coord &&
       Array.isArray(coord) &&
       coord.length === 2 &&
@@ -76,77 +90,30 @@ const MapboxTravelMap = ({ markers = [], onMarkerClick, loading = false }) => {
       !isNaN(coord[0]) &&
       !isNaN(coord[1]) &&
       coord[0] >= -90 &&
-      coord[0] <= 90 && // latitude
+      coord[0] <= 90 &&
       coord[1] >= -180 &&
-      coord[1] <= 180; // longitude
-
-    if (!isValid) {
-      console.warn('⚠️ Coordenada inválida:', coord);
-    }
-
-    return isValid;
+      coord[1] <= 180
+    );
   };
 
-  // ⭐ DEBUG DETALHADO DE MARKERS
-  const debugMarkers = markers => {
-    console.log('\n🔍 === DEBUG DE MARKERS ===');
-    console.log(`📊 Total de markers recebidos: ${markers.length}`);
-
-    if (markers.length === 0) {
-      console.warn('⚠️ Nenhum marker recebido');
-      return;
-    }
-
-    markers.forEach((marker, index) => {
-      console.log(`\n📍 Marker ${index + 1}:`, {
-        id: marker.id || marker.travelId,
-        name: marker.name,
-        location: marker.location,
-        coordinates: marker.coordinates,
-        imageCount: marker.imageCount,
-        valid: isValidCoordinate(marker.coordinates),
-        lat: marker.coordinates?.[0],
-        lng: marker.coordinates?.[1],
-      });
-
-      if (!isValidCoordinate(marker.coordinates)) {
-        console.error(
-          `❌ Marker ${marker.name} tem coordenadas inválidas:`,
-          marker.coordinates
-        );
-      }
-    });
-  };
-
-  // ⭐ INICIALIZAÇÃO DO MAPA COM TRATAMENTO DE ERRO
+  // ⭐ INICIALIZAÇÃO DO MAPA
   useEffect(() => {
     if (map.current) return;
 
-    console.log('\n🗺️ === INICIALIZANDO MAPA ===');
-    console.log('Environment:', {
-      mode: import.meta.env.MODE,
-      dev: import.meta.env.DEV,
-      prod: import.meta.env.PROD,
-      apiUrl: import.meta.env.VITE_API_URL,
-      hasMapboxToken: !!MAPBOX_TOKEN,
-    });
+    console.log('🗺️ Inicializando mapa 3D interativo...');
 
-    // ⭐ VERIFICAR TOKEN ANTES DE INICIALIZAR
     if (!MAPBOX_TOKEN || !MAPBOX_TOKEN.startsWith('pk.')) {
-      const errorMsg =
-        'Token Mapbox não configurado. Configure VITE_MAPBOX_TOKEN nas variáveis de ambiente.';
-      console.error('❌', errorMsg);
-      setMapError(errorMsg);
+      setMapError(
+        'Token Mapbox não configurado. Configure VITE_MAPBOX_TOKEN nas variáveis de ambiente.'
+      );
       return;
     }
 
     try {
-      console.log('🚀 Criando instância do mapa...');
-
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
         style: mapStyle,
-        center: [0, 20], // Centro mundial
+        center: [0, 20],
         zoom: 2,
         pitch: is3D ? 45 : 0,
         bearing: 0,
@@ -154,20 +121,14 @@ const MapboxTravelMap = ({ markers = [], onMarkerClick, loading = false }) => {
         projection: 'globe',
       });
 
-      // ⭐ TRATAMENTO DE ERROS DO MAPA
-      map.current.on('error', e => {
-        console.error('❌ Erro do Mapbox:', e);
-        setMapError(`Erro do mapa: ${e.error?.message || 'Erro desconhecido'}`);
-      });
-
-      // ⭐ CONTROLES PADRÃO
+      // ⭐ CONTROLES
       map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
       map.current.addControl(new mapboxgl.FullscreenControl(), 'top-right');
       map.current.addControl(new mapboxgl.ScaleControl(), 'bottom-left');
 
-      // ⭐ QUANDO O ESTILO CARREGAR
+      // ⭐ QUANDO O MAPA CARREGAR
       map.current.on('style.load', () => {
-        console.log('🎨 Estilo do mapa carregado');
+        console.log('✅ Mapa carregado com sucesso');
         setMapLoaded(true);
         setMapError(null);
 
@@ -180,35 +141,21 @@ const MapboxTravelMap = ({ markers = [], onMarkerClick, loading = false }) => {
             'space-color': 'rgb(11, 11, 25)',
             'star-intensity': 0.6,
           });
-          console.log('✅ Atmosfera 3D configurada');
         } catch (fogError) {
           console.warn('⚠️ Erro ao configurar atmosfera:', fogError);
         }
       });
 
-      // ⭐ EVENTOS DE INTERAÇÃO
-      let userInteracting = false;
-
-      map.current.on('mousedown', () => {
-        userInteracting = true;
+      // ⭐ TRATAMENTO DE ERROS
+      map.current.on('error', e => {
+        console.error('❌ Erro do Mapbox:', e);
+        setMapError(`Erro do mapa: ${e.error?.message || 'Erro desconhecido'}`);
       });
-      map.current.on('touchstart', () => {
-        userInteracting = true;
-      });
-      map.current.on('mouseup', () => {
-        userInteracting = false;
-      });
-      map.current.on('touchend', () => {
-        userInteracting = false;
-      });
-
-      console.log('✅ Mapa inicializado com sucesso');
     } catch (error) {
-      console.error('❌ Erro crítico ao inicializar mapa:', error);
+      console.error('❌ Erro ao inicializar mapa:', error);
       setMapError(`Falha na inicialização: ${error.message}`);
     }
 
-    // Cleanup
     return () => {
       if (map.current) {
         map.current.remove();
@@ -220,47 +167,213 @@ const MapboxTravelMap = ({ markers = [], onMarkerClick, loading = false }) => {
   // ⭐ ATUALIZAR ESTILO DO MAPA
   useEffect(() => {
     if (map.current && mapLoaded) {
-      console.log('🎨 Mudando estilo do mapa para:', mapStyle);
-      try {
-        map.current.setStyle(mapStyle);
-      } catch (error) {
-        console.error('❌ Erro ao mudar estilo:', error);
-      }
+      map.current.setStyle(mapStyle);
     }
   }, [mapStyle, mapLoaded]);
 
   // ⭐ ATUALIZAR PITCH (3D/2D)
   useEffect(() => {
     if (map.current && mapLoaded) {
-      console.log('🔄 Mudando pitch para:', is3D ? '3D (45°)' : '2D (0°)');
-      try {
-        map.current.easeTo({
-          pitch: is3D ? 45 : 0,
-          duration: 1000,
-        });
-      } catch (error) {
-        console.error('❌ Erro ao mudar pitch:', error);
-      }
+      map.current.easeTo({
+        pitch: is3D ? 45 : 0,
+        duration: 1000,
+      });
     }
   }, [is3D, mapLoaded]);
 
-  // ⭐ ATUALIZAR MARKERS - VERSÃO ROBUSTA PARA PRODUÇÃO
-  useEffect(() => {
-    if (!map.current || !mapLoaded || !markers) {
-      console.log('⏳ Aguardando mapa carregar ou markers...', {
-        hasMap: !!map.current,
-        mapLoaded,
-        hasMarkers: !!markers,
-        markersLength: markers?.length,
-      });
-      return;
+  // ⭐ FUNÇÃO PARA CRIAR MARKER ELEMENT COM TOOLTIP
+  const createMarkerElement = (markerData, index) => {
+    const el = document.createElement('div');
+    el.className = 'custom-marker';
+    el.style.position = 'relative';
+    el.innerHTML = `
+      <div class="marker-container" style="
+        width: 60px; 
+        height: 60px; 
+        position: relative;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      ">
+        <div class="marker-pulse" style="
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          background: rgba(239, 68, 68, 0.3);
+          animation: pulse 2s infinite;
+        "></div>
+        <div class="marker-pin" style="
+          position: absolute;
+          top: 8px;
+          left: 8px;
+          width: 44px;
+          height: 44px;
+          background: linear-gradient(135deg, #ef4444, #dc2626);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-weight: bold;
+          font-size: 16px;
+          box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+          border: 4px solid white;
+        ">
+          ${markerData.imageCount || '📍'}
+        </div>
+        
+        <!-- Tooltip on Hover -->
+        <div class="marker-tooltip" style="
+          position: absolute;
+          bottom: 70px;
+          left: 50%;
+          transform: translateX(-50%) scale(0);
+          opacity: 0;
+          background: linear-gradient(135deg, rgba(31, 41, 55, 0.98), rgba(17, 24, 39, 0.98));
+          color: white;
+          padding: 14px 18px;
+          border-radius: 12px;
+          white-space: nowrap;
+          font-size: 14px;
+          font-weight: 500;
+          box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+          backdrop-filter: blur(12px);
+          z-index: 9999;
+          transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+          pointer-events: none;
+          min-width: 250px;
+        ">
+          <div style="font-weight: bold; margin-bottom: 6px; font-size: 16px; color: #fbbf24;">
+            ${markerData.name}
+          </div>
+          <div style="font-size: 13px; color: #e5e7eb; margin-bottom: 4px;">
+            📍 ${
+              markerData.location
+                ? markerData.location.split(',')[0].trim()
+                : 'Local'
+            }
+          </div>
+          <div style="font-size: 13px; color: #e5e7eb; margin-bottom: 4px;">
+            📸 ${markerData.imageCount} ${
+      markerData.imageCount === 1 ? 'foto' : 'fotos'
     }
+          </div>
+          <div style="font-size: 13px; color: #86efac; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
+            Clique para ver o álbum completo
+          </div>
+          
+          <!-- Arrow -->
+          <div style="
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 8px solid rgba(17, 24, 39, 0.98);
+          "></div>
+        </div>
+      </div>
+    `;
 
-    console.log('\n📍 === PROCESSANDO MARKERS ===');
+    // ⭐ CONTROLE DO TOOLTIP E ANIMAÇÕES
+    const tooltip = el.querySelector('.marker-tooltip');
+    const markerPin = el.querySelector('.marker-pin');
+
+    // Animação de entrada
+    setTimeout(() => {
+      el.style.transform = 'scale(1.2)';
+      setTimeout(() => {
+        el.style.transform = 'scale(1)';
+      }, 300);
+    }, index * 100);
+
+    // ⭐ EVENTOS DE HOVER
+    el.addEventListener('mouseenter', () => {
+      setHoveredMarkerId(markerData.id || markerData.travelId);
+      el.style.transform = 'scale(1.15)';
+      el.style.zIndex = '10000';
+
+      // Mostrar tooltip com animação
+      if (tooltip) {
+        tooltip.style.transform = 'translateX(-50%) scale(1)';
+        tooltip.style.opacity = '1';
+      }
+
+      // Destacar o pin
+      if (markerPin) {
+        markerPin.style.background =
+          'linear-gradient(135deg, #f97316, #ef4444)';
+        markerPin.style.boxShadow = '0 8px 20px rgba(239, 68, 68, 0.6)';
+      }
+    });
+
+    el.addEventListener('mouseleave', () => {
+      setHoveredMarkerId(null);
+      el.style.transform = 'scale(1)';
+      el.style.zIndex = '1';
+
+      // Esconder tooltip com animação
+      if (tooltip) {
+        tooltip.style.transform = 'translateX(-50%) scale(0)';
+        tooltip.style.opacity = '0';
+      }
+
+      // Restaurar o pin
+      if (markerPin) {
+        markerPin.style.background =
+          'linear-gradient(135deg, #ef4444, #dc2626)';
+        markerPin.style.boxShadow = '0 6px 16px rgba(0,0,0,0.4)';
+      }
+    });
+
+    // ⭐ CLICK EVENT MELHORADO
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      console.log('🎯 Marker clicado:', markerData.name);
+
+      // Callback para abrir o álbum
+      if (onMarkerClick) {
+        onMarkerClick(markerData);
+      }
+    });
+
+    // ⭐ TOUCH EVENTS PARA MOBILE
+    let touchTimer;
+    el.addEventListener('touchstart', e => {
+      touchTimer = setTimeout(() => {
+        if (tooltip) {
+          tooltip.style.transform = 'translateX(-50%) scale(1)';
+          tooltip.style.opacity = '1';
+        }
+      }, 500);
+    });
+
+    el.addEventListener('touchend', () => {
+      clearTimeout(touchTimer);
+      setTimeout(() => {
+        if (tooltip) {
+          tooltip.style.transform = 'translateX(-50%) scale(0)';
+          tooltip.style.opacity = '0';
+        }
+      }, 3000);
+    });
+
+    return el;
+  };
+
+  // ⭐ ATUALIZAR MARKERS
+  useEffect(() => {
+    if (!map.current || !mapLoaded || !markers) return;
+
+    console.log('📍 Atualizando markers no mapa...');
     setMarkersLoaded(false);
-    debugMarkers(markers);
 
-    // ⭐ REMOVER MARKERS ANTIGOS
+    // Remover markers antigos
     Object.values(markersRefs.current).forEach(marker => {
       try {
         marker.remove();
@@ -270,256 +383,219 @@ const MapboxTravelMap = ({ markers = [], onMarkerClick, loading = false }) => {
     });
     markersRefs.current = {};
 
-    // ⭐ FILTRAR APENAS MARKERS VÁLIDOS
-    const validMarkers = markers.filter(marker => {
-      const isValid = isValidCoordinate(marker.coordinates);
-      if (!isValid && marker.coordinates) {
-        console.warn('⚠️ Marker com coordenadas inválidas:', {
-          name: marker.name,
-          coordinates: marker.coordinates,
-          type: typeof marker.coordinates,
-          isArray: Array.isArray(marker.coordinates),
-        });
-      }
-      return isValid;
-    });
-
-    console.log(`✅ ${validMarkers.length}/${markers.length} markers válidos`);
+    // Filtrar markers válidos
+    const validMarkers = markers.filter(marker =>
+      isValidCoordinate(marker.coordinates)
+    );
 
     if (validMarkers.length === 0) {
-      console.warn('⚠️ Nenhum marker válido para exibir no mapa');
+      console.warn('⚠️ Nenhum marker válido para exibir');
       setMarkersLoaded(true);
       return;
     }
 
-    // ⭐ ADICIONAR MARKERS COM TRATAMENTO DE ERRO
-    let addedMarkers = 0;
-
+    // ⭐ ADICIONAR NOVOS MARKERS
     validMarkers.forEach((markerData, index) => {
       try {
-        console.log(`📍 Adicionando marker ${index + 1}: ${markerData.name}`);
-
-        // ⭐ CONVERTER COORDENADAS: [lat, lng] -> [lng, lat]
+        // Converter coordenadas: [lat, lng] -> [lng, lat]
         const lngLat = [markerData.coordinates[1], markerData.coordinates[0]];
 
-        console.log(`🔄 Coordenadas:`, {
-          original: markerData.coordinates,
-          converted: lngLat,
-          name: markerData.name,
-        });
+        // Criar elemento do marker
+        const el = createMarkerElement(markerData, index);
 
-        // ⭐ VALIDAR CONVERSÃO
-        if (!lngLat[0] || !lngLat[1] || isNaN(lngLat[0]) || isNaN(lngLat[1])) {
-          console.error('❌ Coordenadas convertidas inválidas:', lngLat);
-          return;
-        }
-
-        // ⭐ CRIAR ELEMENTO DO MARKER
-        const el = document.createElement('div');
-        el.className = 'custom-marker';
-        el.innerHTML = `
-          <div class="marker-container" style="
-            width: 60px; 
-            height: 60px; 
-            position: relative;
-            cursor: pointer;
-            transition: all 0.3s ease;
-          ">
-            <div class="marker-pulse" style="
-              position: absolute;
-              top: 0;
-              left: 0;
-              width: 100%;
-              height: 100%;
-              border-radius: 50%;
-              background: rgba(239, 68, 68, 0.3);
-              animation: pulse 2s infinite;
-            "></div>
-            <div class="marker-pin" style="
-              position: absolute;
-              top: 8px;
-              left: 8px;
-              width: 44px;
-              height: 44px;
-              background: linear-gradient(135deg, #ef4444, #dc2626);
-              border-radius: 50%;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              color: white;
-              font-weight: bold;
-              font-size: 16px;
-              box-shadow: 0 6px 16px rgba(0,0,0,0.4);
-              border: 4px solid white;
-            ">
-              ${markerData.imageCount || '📍'}
-            </div>
-          </div>
-        `;
-
-        // ⭐ ANIMAÇÃO DE ENTRADA
-        setTimeout(() => {
-          el.style.transform = 'scale(1.2)';
-          setTimeout(() => {
-            el.style.transform = 'scale(1)';
-          }, 300);
-        }, index * 200);
-
-        // ⭐ EVENTOS DE HOVER
-        el.addEventListener('mouseenter', () => {
-          el.style.transform = 'scale(1.1)';
-          el.style.zIndex = '1000';
-        });
-
-        el.addEventListener('mouseleave', () => {
-          el.style.transform = 'scale(1)';
-          el.style.zIndex = '1';
-        });
-
-        // ⭐ EVENTO DE CLICK
-        el.addEventListener('click', e => {
-          e.stopPropagation();
-
-          console.log('🎯 Marker clicado:', markerData.name);
-
-          // Voar para o marker
-          try {
-            map.current.flyTo({
-              center: lngLat,
-              zoom: 8,
-              pitch: 60,
-              bearing: 30,
-              duration: 2000,
-            });
-          } catch (flyError) {
-            console.error('❌ Erro ao voar para marker:', flyError);
-          }
-
-          // Callback
-          if (onMarkerClick) {
-            onMarkerClick(markerData);
-          }
-        });
-
-        // ⭐ CRIAR MARKER NO MAPA
-        const marker = new mapboxgl.Marker({ element: el })
+        // Criar marker no mapa
+        const marker = new mapboxgl.Marker({
+          element: el,
+          anchor: 'bottom',
+        })
           .setLngLat(lngLat)
           .addTo(map.current);
 
-        // ⭐ POPUP RICO
+        // ⭐ POPUP DETALHADO (ao clicar com botão direito)
         const popup = new mapboxgl.Popup({
-          offset: 30,
+          offset: [0, -60],
           closeButton: true,
-          closeOnClick: false,
-          className: 'custom-popup',
+          closeOnClick: true,
+          className: 'custom-popup-detailed',
+          maxWidth: '360px',
         }).setHTML(`
-          <div style="padding: 20px; max-width: 300px; font-family: system-ui;">
-            <h3 style="margin: 0 0 12px 0; font-size: 18px; font-weight: bold; color: #1f2937;">
-              ${markerData.name}
-            </h3>
+          <div style="padding: 0; max-width: 360px; font-family: system-ui; overflow: hidden; border-radius: 12px;">
+            ${
+              markerData.coverImage
+                ? `
+              <div style="height: 140px; overflow: hidden; position: relative;">
+                <img src="${markerData.coverImage}" style="width: 100%; height: 100%; object-fit: cover;" />
+                <div style="position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 50%, rgba(0,0,0,0.8));"></div>
+              </div>
+            `
+                : ''
+            }
             
-            <div style="display: flex; align-items: center; margin-bottom: 8px; color: #6b7280; font-size: 14px;">
-              <span style="margin-right: 8px;">📍</span>
-              ${markerData.location || 'Localização não especificada'}
+            <div style="padding: 20px;">
+              <h3 style="margin: 0 0 16px 0; font-size: 20px; font-weight: bold; color: #1f2937;">
+                ${markerData.name}
+              </h3>
+              
+              <div style="space-y: 12px;">
+                <div style="display: flex; align-items: start; margin-bottom: 12px; color: #4b5563; font-size: 14px;">
+                  <span style="margin-right: 12px; font-size: 16px;">📍</span>
+                  <span style="flex: 1; line-height: 1.4;">${
+                    markerData.location || 'Localização não especificada'
+                  }</span>
+                </div>
+                
+                <div style="display: flex; align-items: center; margin-bottom: 12px; color: #4b5563; font-size: 14px;">
+                  <span style="margin-right: 12px; font-size: 16px;">📅</span>
+                  ${
+                    markerData.date
+                      ? new Date(markerData.date).toLocaleDateString('pt-BR', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                        })
+                      : 'Data não especificada'
+                  }
+                </div>
+                
+                <div style="display: flex; align-items: center; margin-bottom: 12px; color: #4b5563; font-size: 14px;">
+                  <span style="margin-right: 12px; font-size: 16px;">📸</span>
+                  <span style="font-weight: 600; color: #1f2937;">${
+                    markerData.imageCount
+                  }</span>
+                  <span style="margin-left: 4px;">${
+                    markerData.imageCount === 1 ? 'foto' : 'fotos'
+                  }</span>
+                </div>
+  
+                <div style="display: flex; align-items: center; padding: 10px; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(34, 197, 94, 0.1)); border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.2);">
+                  <span style="margin-right: 10px; font-size: 14px;">🌍</span>
+                  <div style="font-size: 12px; color: #047857;">
+                    <div style="font-weight: 600;">Coordenadas GPS</div>
+                    <div style="font-family: monospace; margin-top: 2px;">
+                      ${markerData.coordinates[0].toFixed(
+                        6
+                      )}, ${markerData.coordinates[1].toFixed(6)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <button 
+                onclick="if(window.markerPopupHandlers && window.markerPopupHandlers['${
+                  markerData.id || markerData.travelId
+                }']) window.markerPopupHandlers['${
+          markerData.id || markerData.travelId
+        }']()" 
+                style="
+                  width: 100%;
+                  margin-top: 20px;
+                  background: linear-gradient(135deg, #3b82f6, #2563eb);
+                  color: white;
+                  border: none;
+                  padding: 14px 20px;
+                  border-radius: 10px;
+                  font-size: 15px;
+                  font-weight: 600;
+                  cursor: pointer;
+                  transition: all 0.3s;
+                  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  gap: 8px;
+                " 
+                onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(59, 130, 246, 0.4)';"
+                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(59, 130, 246, 0.3)';">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                  <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+                Ver Álbum de Fotos
+              </button>
             </div>
-            
-            <div style="display: flex; align-items: center; margin-bottom: 8px; color: #6b7280; font-size: 14px;">
-              <span style="margin-right: 8px;">📅</span>
-              ${new Date(markerData.date).toLocaleDateString('pt-BR')}
-            </div>
-            
-            <div style="display: flex; align-items: center; margin-bottom: 8px; color: #6b7280; font-size: 14px;">
-              <span style="margin-right: 8px;">📸</span>
-              ${markerData.imageCount} ${
-          markerData.imageCount === 1 ? 'foto' : 'fotos'
-        }
-            </div>
-
-            <div style="display: flex; align-items: center; margin-bottom: 16px; color: #10b981; font-size: 12px;">
-              <span style="margin-right: 8px;">🌍</span>
-              ${markerData.coordinates[0].toFixed(
-                4
-              )}, ${markerData.coordinates[1].toFixed(4)}
-            </div>
-            
-            <button onclick="if(window.currentMarkerClick) window.currentMarkerClick()" style="
-              width: 100%;
-              background: linear-gradient(135deg, #ef4444, #dc2626);
-              color: white;
-              border: none;
-              padding: 12px 20px;
-              border-radius: 8px;
-              font-size: 14px;
-              font-weight: 500;
-              cursor: pointer;
-              transition: all 0.2s;
-            ">
-              Ver Álbum 🖼️
-            </button>
           </div>
         `);
 
-        // ⭐ CALLBACK GLOBAL
-        window.currentMarkerClick = () => {
-          if (onMarkerClick) {
-            onMarkerClick(markerData);
-          }
-        };
+        // Registrar handler para popup
+        if (!window.markerPopupHandlers) {
+          window.markerPopupHandlers = {};
+        }
+        window.markerPopupHandlers[markerData.id || markerData.travelId] =
+          () => {
+            if (onMarkerClick) {
+              onMarkerClick(markerData);
+            }
+          };
+
+        // Adicionar evento de contexto para mostrar popup
+        el.addEventListener('contextmenu', e => {
+          e.preventDefault();
+          marker.togglePopup();
+        });
 
         marker.setPopup(popup);
         markersRefs.current[markerData.id || markerData.travelId] = marker;
-        addedMarkers++;
-
-        console.log(`✅ Marker ${markerData.name} adicionado com sucesso`);
       } catch (markerError) {
         console.error('❌ Erro ao criar marker:', markerError, markerData);
       }
     });
 
-    console.log(`✅ ${addedMarkers} markers adicionados ao mapa`);
-
     // ⭐ AJUSTAR VISTA PARA MOSTRAR TODOS OS MARKERS
-    if (addedMarkers > 0) {
+    if (validMarkers.length > 0) {
       setTimeout(() => {
         try {
           if (validMarkers.length === 1) {
-            // Um marker: voar diretamente
             const marker = validMarkers[0];
             const lngLat = [marker.coordinates[1], marker.coordinates[0]];
-
-            console.log('🎯 Voando para marker único:', marker.name);
-
             map.current.flyTo({
               center: lngLat,
               zoom: 6,
               pitch: 45,
-              duration: 3000,
+              duration: 2000,
             });
           } else {
-            // Múltiplos markers: ajustar bounds
             const bounds = new mapboxgl.LngLatBounds();
             validMarkers.forEach(marker => {
               bounds.extend([marker.coordinates[1], marker.coordinates[0]]);
             });
-
-            console.log('🗺️ Ajustando bounds para todos os markers');
-
             map.current.fitBounds(bounds, {
-              padding: 80,
+              padding: 100,
               maxZoom: 8,
-              duration: 3000,
+              duration: 2000,
             });
           }
         } catch (boundsError) {
           console.error('❌ Erro ao ajustar vista:', boundsError);
         }
-      }, 2000);
+      }, 1500);
     }
 
     setMarkersLoaded(true);
   }, [markers, onMarkerClick, mapLoaded]);
 
-  // ⭐ RENDER COM TRATAMENTO DE ERRO
+  // ⭐ DESTACAR MARKER SELECIONADO
+  useEffect(() => {
+    if (!selectedTravelId || !markersRefs.current[selectedTravelId]) return;
+
+    const marker = markersRefs.current[selectedTravelId];
+    const markerData = markers.find(
+      m => (m.id || m.travelId) === selectedTravelId
+    );
+
+    if (markerData) {
+      map.current.flyTo({
+        center: [markerData.coordinates[1], markerData.coordinates[0]],
+        zoom: 10,
+        pitch: 60,
+        bearing: 30,
+        duration: 2000,
+      });
+    }
+  }, [selectedTravelId, markers]);
+
+  // ⭐ RENDER
   if (mapError) {
     return (
       <div className='relative w-full h-full bg-gray-100 flex items-center justify-center'>
@@ -529,10 +605,8 @@ const MapboxTravelMap = ({ markers = [], onMarkerClick, loading = false }) => {
             Erro no Mapa
           </h3>
           <p className='text-sm text-gray-600 mb-4'>{mapError}</p>
-          <div className='text-xs text-gray-500 space-y-1'>
-            <p>Verifique se o token Mapbox está configurado</p>
-            <p>Environment: {import.meta.env.MODE}</p>
-            <p>Token: {MAPBOX_TOKEN ? 'Configurado' : 'Ausente'}</p>
+          <div className='text-xs text-gray-500'>
+            <p>Configure VITE_MAPBOX_TOKEN no arquivo .env</p>
           </div>
         </div>
       </div>
@@ -572,7 +646,7 @@ const MapboxTravelMap = ({ markers = [], onMarkerClick, loading = false }) => {
           } ${!mapLoaded ? 'opacity-50 cursor-not-allowed' : ''}`}
           title={is3D ? 'Desativar 3D' : 'Ativar 3D'}
         >
-          <Navigation
+          <Compass
             className={`h-4 w-4 transition-transform ${
               is3D ? 'rotate-45' : ''
             }`}
@@ -580,33 +654,37 @@ const MapboxTravelMap = ({ markers = [], onMarkerClick, loading = false }) => {
         </button>
       </div>
 
-      {/* ⭐ CONTADOR DE MARKERS MELHORADO */}
+      {/* ⭐ CONTADOR DE MARKERS */}
       {markers.length > 0 && (
         <div className='absolute top-4 right-4 z-10'>
-          <div className='bg-white rounded-lg shadow-lg px-3 py-2 flex items-center space-x-2'>
+          <div className='bg-white rounded-lg shadow-lg px-4 py-2 flex items-center space-x-3'>
             <MapPin className='h-4 w-4 text-red-600' />
             <span className='text-sm font-medium'>
-              {markers.filter(m => isValidCoordinate(m.coordinates)).length} de{' '}
-              {markers.length} no mapa
+              {markers.filter(m => isValidCoordinate(m.coordinates)).length}{' '}
+              lugares no mapa
             </span>
-            {!markersLoaded && (
-              <div className='animate-spin rounded-full h-3 w-3 border-b-2 border-red-600'></div>
+            {hoveredMarkerId && (
+              <span className='text-xs text-gray-500'>
+                •{' '}
+                {
+                  markers.find(m => (m.id || m.travelId) === hoveredMarkerId)
+                    ?.name
+                }
+              </span>
             )}
           </div>
         </div>
       )}
 
-      {/* ⭐ LOADING OVERLAY MELHORADO */}
+      {/* ⭐ LOADING OVERLAY */}
       {(loading || !mapLoaded) && (
         <div className='absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center z-20'>
           <div className='text-center'>
-            <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto mb-2'></div>
-            <p className='text-sm text-gray-600'>
-              {loading ? 'Carregando dados...' : 'Inicializando mapa 3D...'}
+            <Globe className='h-12 w-12 text-blue-600 animate-pulse mx-auto mb-3' />
+            <p className='text-sm font-medium text-gray-700'>
+              {loading ? 'Carregando viagens...' : 'Inicializando mapa 3D...'}
             </p>
-            <p className='text-xs text-gray-500 mt-1'>
-              {import.meta.env.MODE} | Token: {MAPBOX_TOKEN ? '✓' : '✗'}
-            </p>
+            <p className='text-xs text-gray-500 mt-2'>Powered by Mapbox</p>
           </div>
         </div>
       )}
@@ -626,7 +704,7 @@ const MapboxTravelMap = ({ markers = [], onMarkerClick, loading = false }) => {
           }
           50% {
             transform: scale(1.3);
-            opacity: 0.6;
+            opacity: 0.5;
           }
           100% {
             transform: scale(1);
@@ -634,14 +712,25 @@ const MapboxTravelMap = ({ markers = [], onMarkerClick, loading = false }) => {
           }
         }
 
-        .custom-popup .mapboxgl-popup-content {
+        .custom-popup-detailed .mapboxgl-popup-content {
           border-radius: 12px !important;
-          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15) !important;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3) !important;
           border: none !important;
+          padding: 0 !important;
+          overflow: hidden !important;
         }
 
-        .custom-popup .mapboxgl-popup-tip {
-          border-top-color: white !important;
+        .custom-popup-detailed .mapboxgl-popup-tip {
+          display: none !important;
+        }
+
+        .custom-popup-detailed .mapboxgl-popup-close-button {
+          color: white !important;
+          font-size: 24px !important;
+          padding: 8px !important;
+          background: rgba(0, 0, 0, 0.3) !important;
+          border-radius: 50% !important;
+          margin: 8px !important;
         }
       `}</style>
     </div>
