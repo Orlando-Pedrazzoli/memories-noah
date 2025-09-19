@@ -1,4 +1,4 @@
-// client/src/components/travel/MapboxTravelMap.jsx - VERSÃO SIMPLIFICADA E CORRIGIDA
+// client/src/components/travel/MapboxTravelMap.jsx - VERSÃO CORRIGIDA COM FIX DOS MARKERS
 
 import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
@@ -32,6 +32,37 @@ if (!MAPBOX_TOKEN || !MAPBOX_TOKEN.startsWith('pk.')) {
   mapboxgl.accessToken = MAPBOX_TOKEN;
   console.log('✅ Token Mapbox configurado');
 }
+
+// ⭐⭐⭐ ADICIONAR ESTILOS CSS PARA ANIMAÇÃO PULSE
+const addCustomStyles = () => {
+  if (!document.getElementById('mapbox-custom-styles')) {
+    const style = document.createElement('style');
+    style.id = 'mapbox-custom-styles';
+    style.textContent = `
+      @keyframes pulse {
+        0% {
+          transform: scale(1);
+          opacity: 0.4;
+        }
+        50% {
+          transform: scale(1.3);
+          opacity: 0.2;
+        }
+        100% {
+          transform: scale(1);
+          opacity: 0.4;
+        }
+      }
+      
+      .custom-marker {
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+};
 
 const MapboxTravelMap = ({
   markers = [],
@@ -76,9 +107,334 @@ const MapboxTravelMap = ({
     );
   };
 
+  // ⭐⭐⭐ FUNÇÃO CORRIGIDA PARA CRIAR MARKER ELEMENT (sem bug de hover)
+  const createMarkerElement = (markerData, index) => {
+    const el = document.createElement('div');
+    el.className = 'custom-marker';
+
+    // ⭐ IMPORTANTE: NÃO aplicar transform no elemento raiz!
+    el.innerHTML = `
+      <div class="marker-wrapper" style="
+        width: 50px; 
+        height: 70px; 
+        position: relative;
+        margin-left: -25px;
+        margin-top: -70px;
+      ">
+        <!-- Container interno para animações -->
+        <div class="marker-inner" style="
+          width: 100%;
+          height: 100%;
+          position: relative;
+          transition: transform 0.3s ease;
+          transform-origin: bottom center;
+        ">
+          <!-- Pulsação animada -->
+          <div class="marker-pulse" style="
+            position: absolute;
+            top: -5px;
+            left: -5px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(239, 68, 68, 0.4);
+            animation: pulse 2s infinite;
+          "></div>
+          
+          <!-- Pin principal -->
+          <div class="marker-pin" style="
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            border-radius: 50% 50% 50% 0;
+            transform: rotate(-45deg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 18px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+            border: 3px solid white;
+            transition: all 0.3s ease;
+          ">
+            <span style="transform: rotate(45deg);">
+              ${markerData.imageCount || '📍'}
+            </span>
+          </div>
+          
+          <!-- Ponta do pin -->
+          <div style="
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-top: 20px solid #dc2626;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+          "></div>
+          
+          <!-- Label -->
+          <div class="marker-label" style="
+            position: absolute;
+            top: 75px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.85);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 10;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          ">
+            ${markerData.name}
+          </div>
+          
+          <!-- Tooltip -->
+          <div class="marker-tooltip" style="
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%) scale(0);
+            opacity: 0;
+            background: linear-gradient(135deg, rgba(31, 41, 55, 0.98), rgba(17, 24, 39, 0.98));
+            color: white;
+            padding: 16px;
+            border-radius: 12px;
+            white-space: nowrap;
+            font-size: 14px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            backdrop-filter: blur(12px);
+            z-index: 1000;
+            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            pointer-events: none;
+            min-width: 280px;
+          ">
+            <div style="font-weight: bold; font-size: 16px; color: #fbbf24; margin-bottom: 8px;">
+              ${markerData.name}
+            </div>
+            <div style="font-size: 13px; color: #e5e7eb; margin-bottom: 4px;">
+              📍 ${markerData.location || 'Local desconhecido'}
+            </div>
+            <div style="font-size: 13px; color: #e5e7eb; margin-bottom: 4px;">
+              📸 ${markerData.imageCount} ${
+      markerData.imageCount === 1 ? 'foto' : 'fotos'
+    }
+            </div>
+            ${
+              markerData.date
+                ? `
+            <div style="font-size: 13px; color: #e5e7eb; margin-bottom: 8px;">
+              📅 ${new Date(markerData.date).toLocaleDateString('pt-BR')}
+            </div>
+            `
+                : ''
+            }
+            <div style="font-size: 13px; color: #86efac; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
+              Clique para ver o álbum
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // ⭐⭐⭐ CORREÇÃO CRÍTICA: Aplicar animações apenas no elemento INTERNO, não no raiz!
+    const innerElement = el.querySelector('.marker-inner');
+    const tooltip = el.querySelector('.marker-tooltip');
+    const markerPin = el.querySelector('.marker-pin');
+
+    // Cursor pointer no elemento raiz
+    el.style.cursor = 'pointer';
+
+    // ⭐ EVENTOS DE HOVER - Aplicar apenas no elemento interno!
+    el.addEventListener('mouseenter', () => {
+      setHoveredMarkerId(markerData.id || markerData.travelId);
+
+      // ⭐ IMPORTANTE: Scale apenas no elemento interno, NÃO no el!
+      if (innerElement) {
+        innerElement.style.transform = 'scale(1.1)';
+      }
+
+      // Elevar z-index (isso é seguro)
+      el.style.zIndex = '10000';
+
+      // Mostrar tooltip
+      if (tooltip) {
+        tooltip.style.transform = 'translateX(-50%) scale(1)';
+        tooltip.style.opacity = '1';
+      }
+
+      // Destacar o pin
+      if (markerPin) {
+        markerPin.style.background =
+          'linear-gradient(135deg, #f97316, #ef4444)';
+        markerPin.style.boxShadow = '0 8px 20px rgba(239, 68, 68, 0.6)';
+      }
+    });
+
+    el.addEventListener('mouseleave', () => {
+      setHoveredMarkerId(null);
+
+      // ⭐ Resetar scale do elemento interno
+      if (innerElement) {
+        innerElement.style.transform = 'scale(1)';
+      }
+
+      // Resetar z-index
+      el.style.zIndex = '1';
+
+      // Esconder tooltip
+      if (tooltip) {
+        tooltip.style.transform = 'translateX(-50%) scale(0)';
+        tooltip.style.opacity = '0';
+      }
+
+      // Restaurar o pin
+      if (markerPin) {
+        markerPin.style.background =
+          'linear-gradient(135deg, #ef4444, #dc2626)';
+        markerPin.style.boxShadow = '0 8px 20px rgba(0,0,0,0.5)';
+      }
+    });
+
+    // ⭐ CLICK EVENT
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      console.log('🎯 Marker clicado:', markerData.name);
+
+      if (onMarkerClick) {
+        onMarkerClick(markerData);
+      }
+    });
+
+    // ⭐ TOUCH EVENTS PARA MOBILE (sem transform no elemento raiz)
+    let touchTimer;
+    el.addEventListener('touchstart', e => {
+      touchTimer = setTimeout(() => {
+        if (tooltip) {
+          tooltip.style.transform = 'translateX(-50%) scale(1)';
+          tooltip.style.opacity = '1';
+        }
+      }, 500);
+    });
+
+    el.addEventListener('touchend', () => {
+      clearTimeout(touchTimer);
+      setTimeout(() => {
+        if (tooltip) {
+          tooltip.style.transform = 'translateX(-50%) scale(0)';
+          tooltip.style.opacity = '0';
+        }
+      }, 3000);
+    });
+
+    return el;
+  };
+
+  // ⭐⭐⭐ ALTERNATIVA MAIS SIMPLES - Se a versão acima ainda tiver problemas
+  const createSimpleMarkerElement = (markerData, index) => {
+    const el = document.createElement('div');
+
+    // Container wrapper que não será afetado por transforms
+    el.innerHTML = `
+      <div style="
+        width: 50px; 
+        height: 70px; 
+        position: relative;
+        margin-left: -25px;
+        margin-top: -70px;
+        pointer-events: none;
+      ">
+        <!-- Pin SVG sem animações de transform -->
+        <svg width="50" height="70" viewBox="0 0 50 70" style="
+          position: absolute;
+          top: 0;
+          left: 0;
+          pointer-events: all;
+          cursor: pointer;
+          filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+        ">
+          <!-- Pin shape -->
+          <path d="M25 0 C11.2 0 0 11.2 0 25 C0 45 25 70 25 70 S50 45 50 25 C50 11.2 38.8 0 25 0 Z" 
+                fill="#ef4444" 
+                stroke="white" 
+                stroke-width="2"
+                class="pin-path"/>
+          <!-- Inner circle -->
+          <circle cx="25" cy="25" r="12" fill="white"/>
+          <!-- Number -->
+          <text x="25" y="30" text-anchor="middle" font-family="Arial, sans-serif" 
+                font-size="14" font-weight="bold" fill="#ef4444">
+            ${markerData.imageCount || ''}
+          </text>
+        </svg>
+        
+        <!-- Label below pin -->
+        <div style="
+          position: absolute;
+          top: 75px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(0,0,0,0.85);
+          color: white;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 11px;
+          white-space: nowrap;
+          pointer-events: none;
+          opacity: 0;
+          transition: opacity 0.3s;
+        " class="marker-label">
+          ${markerData.name}
+        </div>
+      </div>
+    `;
+
+    const svg = el.querySelector('svg');
+    const label = el.querySelector('.marker-label');
+    const pinPath = el.querySelector('.pin-path');
+
+    // Estilos CSS para hover (sem transform!)
+    svg.addEventListener('mouseenter', () => {
+      pinPath.setAttribute('fill', '#f97316'); // Mudar cor ao invés de scale
+      label.style.opacity = '1'; // Mostrar label
+      setHoveredMarkerId(markerData.id || markerData.travelId);
+    });
+
+    svg.addEventListener('mouseleave', () => {
+      pinPath.setAttribute('fill', '#ef4444'); // Cor original
+      label.style.opacity = '0'; // Esconder label
+      setHoveredMarkerId(null);
+    });
+
+    svg.addEventListener('click', e => {
+      e.stopPropagation();
+      if (onMarkerClick) {
+        onMarkerClick(markerData);
+      }
+    });
+
+    return el;
+  };
+
   // ⭐ INICIALIZAÇÃO DO MAPA
   useEffect(() => {
     if (map.current) return;
+
+    // Adicionar estilos CSS customizados
+    addCustomStyles();
 
     console.log('🗺️ Inicializando mapa 3D interativo...');
 
@@ -157,78 +513,7 @@ const MapboxTravelMap = ({
     }
   }, [is3D, mapLoaded]);
 
-  // ⭐⭐⭐ FUNÇÃO SIMPLIFICADA PARA CRIAR MARKER
-  const createMarkerElement = (markerData, index) => {
-    const el = document.createElement('div');
-
-    // SOLUÇÃO SIMPLES: Usar um div com background-image SVG
-    el.innerHTML = `
-      <div style="
-        width: 40px;
-        height: 60px;
-        position: relative;
-      ">
-        <!-- Pin SVG simples -->
-        <svg width="40" height="60" viewBox="0 0 40 60" xmlns="http://www.w3.org/2000/svg">
-          <!-- Sombra -->
-          <ellipse cx="20" cy="58" rx="10" ry="3" fill="black" opacity="0.3"/>
-          <!-- Pin -->
-          <path d="M20 0 C8.95 0 0 8.95 0 20 C0 35 20 60 20 60 C20 60 40 35 40 20 C40 8.95 31.05 0 20 0 Z" 
-                fill="#ef4444" 
-                stroke="white" 
-                stroke-width="2"/>
-          <!-- Círculo interno -->
-          <circle cx="20" cy="20" r="8" fill="white"/>
-          <!-- Número -->
-          <text x="20" y="25" text-anchor="middle" font-family="Arial, sans-serif" 
-                font-size="12" font-weight="bold" fill="#ef4444">
-            ${markerData.imageCount || ''}
-          </text>
-        </svg>
-        
-        <!-- Label -->
-        <div style="
-          position: absolute;
-          top: 65px;
-          left: 50%;
-          transform: translateX(-50%);
-          background: rgba(0,0,0,0.8);
-          color: white;
-          padding: 2px 6px;
-          border-radius: 3px;
-          font-size: 11px;
-          white-space: nowrap;
-          pointer-events: none;
-        ">
-          ${markerData.name}
-        </div>
-      </div>
-    `;
-
-    // Click handler
-    el.addEventListener('click', e => {
-      e.stopPropagation();
-      console.log('🎯 Marker clicado:', markerData.name);
-      if (onMarkerClick) {
-        onMarkerClick(markerData);
-      }
-    });
-
-    // Hover effects
-    el.style.cursor = 'pointer';
-    el.addEventListener('mouseenter', () => {
-      el.style.transform = 'scale(1.1)';
-      setHoveredMarkerId(markerData.id || markerData.travelId);
-    });
-    el.addEventListener('mouseleave', () => {
-      el.style.transform = 'scale(1)';
-      setHoveredMarkerId(null);
-    });
-
-    return el;
-  };
-
-  // ⭐⭐⭐ ATUALIZAR MARKERS - VERSÃO CORRIGIDA
+  // ⭐⭐⭐ ATUALIZAR MARKERS - VERSÃO CORRIGIDA COM NOVO createMarkerElement
   useEffect(() => {
     if (!map.current || !mapLoaded || !markers) return;
 
@@ -266,7 +551,7 @@ const MapboxTravelMap = ({
 
     console.log('✅ Markers válidos para exibir:', validMarkers.length);
 
-    // ⭐⭐⭐ ADICIONAR NOVOS MARKERS COM POSICIONAMENTO CORRETO
+    // ⭐⭐⭐ ADICIONAR NOVOS MARKERS COM CONFIGURAÇÃO CORRIGIDA
     validMarkers.forEach((markerData, index) => {
       try {
         // IMPORTANTE: Converter coordenadas [lat, lng] para [lng, lat] para Mapbox
@@ -274,14 +559,15 @@ const MapboxTravelMap = ({
 
         console.log(`📍 Adicionando marker ${markerData.name} em:`, lngLat);
 
-        // Criar elemento do marker
+        // Criar elemento do marker (usar a versão completa ou simples conforme necessário)
         const el = createMarkerElement(markerData, index);
+        // Alternativa: const el = createSimpleMarkerElement(markerData, index);
 
-        // ⭐⭐⭐ SOLUÇÃO DEFINITIVA: anchor bottom com offset correto
+        // ⭐⭐⭐ CONFIGURAÇÃO CORRIGIDA DO MARKER
         const marker = new mapboxgl.Marker({
           element: el,
-          anchor: 'bottom', // Pin aponta para baixo
-          offset: [0, -10], // Ajuste fino para compensar a sombra
+          anchor: 'bottom', // Base do pin na coordenada
+          offset: [0, 0], // Sem offset adicional
         })
           .setLngLat(lngLat)
           .addTo(map.current);
