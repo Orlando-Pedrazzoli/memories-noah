@@ -26,19 +26,5 @@
     "imageCount": 3,
     "createdAt": "2025-09-17T13:38:32.971Z",
     "updatedAt": "2025-09-17T13:38:33.007Z"
-  },
-  {
-    "id": "portugal-ferias",
-    "name": "portugal ferias",
-    "coordinates": [
-      38.7077507,
-      -9.1365919
-    ],
-    "travelId": "portugal-ferias",
-    "date": "2025-08-13",
-    "location": "Lisboa, Portugal",
-    "imageCount": 4,
-    "createdAt": "2025-09-18T13:49:59.321Z",
-    "updatedAt": "2025-09-18T13:49:59.351Z"
   }
 ]
