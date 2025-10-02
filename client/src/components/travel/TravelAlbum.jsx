@@ -75,12 +75,14 @@ const TravelAlbum = ({ travel, onClose, onTravelDeleted }) => {
         formData.append('images', file);
       });
 
-      formData.append('travelName', travel.name);
-      formData.append('location', travel.location);
-      formData.append('date', travel.date);
-      formData.append('mode', 'append'); // Indicar que é adição a álbum existente
+      // Adicionar descrição opcional
+      formData.append(
+        'description',
+        `Adicionado em ${new Date().toLocaleDateString('pt-BR')}`
+      );
 
-      const response = await uploadService.uploadTravel(formData);
+      // ✅ CORREÇÃO: Usar o método correto para adicionar a álbum existente
+      const response = await uploadService.addToTravel(travel.id, formData);
 
       if (response.success) {
         toast.success(`${files.length} fotos adicionadas com sucesso!`);

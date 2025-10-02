@@ -176,6 +176,12 @@ router.post(
           .status(400)
           .json({ error: 'Travel name and location are required' });
       }
+      if (mode === 'append') {
+        return res.status(400).json({
+          error: 'Use a rota /travel/:travelId/add para adicionar fotos',
+          details: 'Esta rota é apenas para criar novos álbuns',
+        });
+      }
 
       const folderName = travelName.replace(/\s+/g, '-').toLowerCase();
 

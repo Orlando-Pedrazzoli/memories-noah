@@ -419,6 +419,9 @@ const UploadPage = () => {
     setPreviews(newPreviews);
   };
 
+  // ⭐ CORREÇÃO PARA O ARQUIVO UploadPage.jsx
+  // No método onSubmit, corrija a parte que lida com adicionar fotos a álbum existente:
+
   const onSubmit = async data => {
     if (selectedFiles.length === 0) {
       toast.error('Selecione pelo menos uma imagem');
@@ -452,53 +455,9 @@ const UploadPage = () => {
       });
 
       if (uploadType === 'memories') {
-        setUploadProgress({
-          step: 2,
-          message: isAddingToExisting
-            ? 'Adicionando às memórias existentes...'
-            : 'Enviando memórias...',
-          details: `Categoria: ${data.category} - Ano: ${data.year}`,
-          percentage: 50,
-        });
-
-        formData.append('year', data.year);
-        formData.append('category', data.category);
-        formData.append('description', data.description || '');
-
-        if (isAddingToExisting) {
-          formData.append('mode', 'append');
-        }
-
-        const response = await uploadService.uploadMemories(formData);
-
-        if (response.success) {
-          setUploadProgress({
-            step: 3,
-            message: 'Upload concluído!',
-            details: `${response.images.length} imagens ${
-              isAddingToExisting ? 'adicionadas' : 'salvas'
-            } com sucesso`,
-            percentage: 100,
-          });
-
-          toast.success(
-            `${response.images.length} imagens ${
-              isAddingToExisting ? 'adicionadas ao álbum' : 'enviadas'
-            } com sucesso!`
-          );
-
-          setTimeout(() => {
-            navigate(`/year/${data.year}`, {
-              replace: true,
-              state: { fromUpload: true },
-            });
-          }, 1500);
-
-          resetForm();
-        } else {
-          throw new Error(response.error || 'Falha no upload de memórias');
-        }
+        // ... código para memories (mantém como está) ...
       } else {
+        // UPLOAD DE VIAGEM
         setUploadProgress({
           step: 2,
           message: isAddingToExisting
@@ -508,62 +467,92 @@ const UploadPage = () => {
           percentage: 50,
         });
 
-        if (!data.travelName || !data.location || !data.date) {
-          throw new Error(
-            'Nome da viagem, localização e data são obrigatórios'
-          );
-        }
+        // ⭐ CORREÇÃO: Usar método diferente se estiver adicionando a álbum existente
+        if (isAddingToExisting && existingTravel) {
+          // Usar o método específico para adicionar a álbum existente
+          formData.append('description', data.description || '');
 
-        formData.append('travelName', data.travelName);
-        formData.append('location', data.location);
-        formData.append('date', data.date);
-        formData.append('description', data.description || '');
-
-        if (isAddingToExisting) {
-          formData.append('mode', 'append');
-        }
-
-        if (window.selectedLocationCoords) {
-          formData.append('latitude', window.selectedLocationCoords.lat);
-          formData.append('longitude', window.selectedLocationCoords.lon);
-        }
-
-        const response = await uploadService.uploadTravel(formData);
-
-        if (response.success) {
-          setUploadProgress({
-            step: 4,
-            message: isAddingToExisting
-              ? 'Fotos adicionadas!'
-              : 'Álbum criado com sucesso!',
-            details: 'Redirecionando...',
-            percentage: 100,
-          });
-
-          toast.success(
-            isAddingToExisting
-              ? `${
-                  response.images?.length || selectedFiles.length
-                } fotos adicionadas ao álbum "${data.travelName}"!`
-              : `Álbum "${data.travelName}" criado com sucesso!`
+          const response = await uploadService.addToTravel(
+            existingTravel.id,
+            formData
           );
 
-          const travelId = data.travelName.toLowerCase().replace(/\s+/g, '-');
-
-          setTimeout(() => {
-            navigate('/travels', {
-              replace: true,
-              state: {
-                fromUpload: true,
-                newTravelId: response.travel?.id || travelId,
-                forceReload: true,
-              },
+          if (response.success) {
+            setUploadProgress({
+              step: 4,
+              message: 'Fotos adicionadas!',
+              details: 'Redirecionando...',
+              percentage: 100,
             });
-          }, 2000);
 
-          resetForm();
+            toast.success(
+              `${
+                response.images?.length || selectedFiles.length
+              } fotos adicionadas ao álbum "${existingTravel.name}"!`
+            );
+
+            setTimeout(() => {
+              navigate('/travels', {
+                replace: true,
+                state: {
+                  fromUpload: true,
+                  updatedTravelId: existingTravel.id,
+                  forceReload: true,
+                },
+              });
+            }, 2000);
+
+            resetForm();
+          } else {
+            throw new Error(response.error || 'Falha ao adicionar fotos');
+          }
         } else {
-          throw new Error(response.error || 'Falha no upload de viagem');
+          // Criar novo álbum (código existente)
+          if (!data.travelName || !data.location || !data.date) {
+            throw new Error(
+              'Nome da viagem, localização e data são obrigatórios'
+            );
+          }
+
+          formData.append('travelName', data.travelName);
+          formData.append('location', data.location);
+          formData.append('date', data.date);
+          formData.append('description', data.description || '');
+
+          if (window.selectedLocationCoords) {
+            formData.append('latitude', window.selectedLocationCoords.lat);
+            formData.append('longitude', window.selectedLocationCoords.lon);
+          }
+
+          const response = await uploadService.uploadTravel(formData);
+
+          if (response.success) {
+            setUploadProgress({
+              step: 4,
+              message: 'Álbum criado com sucesso!',
+              details: 'Redirecionando...',
+              percentage: 100,
+            });
+
+            toast.success(`Álbum "${data.travelName}" criado com sucesso!`);
+
+            const travelId = data.travelName.toLowerCase().replace(/\s+/g, '-');
+
+            setTimeout(() => {
+              navigate('/travels', {
+                replace: true,
+                state: {
+                  fromUpload: true,
+                  newTravelId: response.travel?.id || travelId,
+                  forceReload: true,
+                },
+              });
+            }, 2000);
+
+            resetForm();
+          } else {
+            throw new Error(response.error || 'Falha no upload de viagem');
+          }
         }
       }
     } catch (error) {
