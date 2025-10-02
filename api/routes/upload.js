@@ -19,7 +19,22 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB limit
   },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
+    // Aceitar formatos de imagem incluindo HEIC/HEIF
+    const allowedMimetypes = [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'image/bmp',
+      'image/heic',
+      'image/heif',
+    ];
+
+    if (
+      file.mimetype.startsWith('image/') ||
+      allowedMimetypes.includes(file.mimetype.toLowerCase())
+    ) {
       cb(null, true);
     } else {
       cb(new Error('Only image files are allowed'), false);
@@ -89,7 +104,7 @@ const createOrUpdateTravelMarker = async travelData => {
   }
 };
 
-// ⭐ ATUALIZADO: Upload memories com suporte para modo append
+// ⭐ CORRIGIDO: Upload memories com suporte para modo append
 router.post(
   '/memories',
   authenticateToken,
@@ -98,19 +113,59 @@ router.post(
     try {
       const { year, category, description, mode } = req.body;
 
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ error: 'No images provided' });
-      }
-
-      console.log('📤 Upload de memórias:', {
+      console.log('📤 Upload de memórias recebido:', {
         year,
         category,
         mode: mode || 'create',
-        fileCount: req.files.length,
+        fileCount: req.files?.length || 0,
+        description,
       });
 
-      const uploadPromises = req.files.map(file => {
+      // Validações
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No images provided',
+        });
+      }
+
+      if (!year) {
+        return res.status(400).json({
+          success: false,
+          error: 'Year is required',
+        });
+      }
+
+      if (!category) {
+        return res.status(400).json({
+          success: false,
+          error: 'Category is required',
+        });
+      }
+
+      // Validar categoria
+      const validCategories = ['photos', 'school-work'];
+      if (!validCategories.includes(category)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid category. Must be one of: ${validCategories.join(
+            ', '
+          )}`,
+        });
+      }
+
+      console.log(
+        '✅ Validações passaram, iniciando upload para Cloudinary...'
+      );
+
+      const uploadPromises = req.files.map((file, index) => {
         return new Promise((resolve, reject) => {
+          console.log(
+            `📸 Uploading file ${index + 1}/${req.files.length}: ${
+              file.originalname
+            }`
+          );
+
           const uploadStream = cloudinary.uploader.upload_stream(
             {
               folder: `memories/${year}/${category}`,
@@ -118,12 +173,22 @@ router.post(
               transformation: [
                 { width: 1200, height: 1200, crop: 'limit', quality: 'auto' },
               ],
+              timeout: 60000, // 60 segundos de timeout
             },
             (error, result) => {
-              if (error) reject(error);
-              else resolve(result);
+              if (error) {
+                console.error(
+                  `❌ Erro ao fazer upload de ${file.originalname}:`,
+                  error
+                );
+                reject(error);
+              } else {
+                console.log(`✅ Upload concluído: ${file.originalname}`);
+                resolve(result);
+              }
             }
           );
+
           uploadStream.end(file.buffer);
         });
       });
@@ -145,20 +210,30 @@ router.post(
           ? `${images.length} imagens adicionadas ao álbum existente`
           : `${images.length} imagens enviadas com sucesso`;
 
+      console.log('✅ Todas as imagens foram enviadas com sucesso');
+
       res.json({
         success: true,
         images,
         message,
         mode: mode || 'create',
+        year,
+        category,
+        totalImages: images.length,
       });
     } catch (error) {
-      console.error('Upload error:', error);
-      res.status(500).json({ error: 'Failed to upload images' });
+      console.error('❌ Upload error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to upload images',
+        details:
+          process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      });
     }
   }
 );
 
-// ⭐ ATUALIZADO: Upload travel photos com suporte para modo append
+// ⭐ CORRIGIDO: Upload travel photos com suporte para modo append
 router.post(
   '/travel',
   authenticateToken,
@@ -167,17 +242,32 @@ router.post(
     try {
       const { travelName, location, date, description, mode } = req.body;
 
+      console.log('🚀 Upload de viagem recebido:', {
+        travelName,
+        location,
+        date,
+        imageCount: req.files?.length || 0,
+        mode: mode || 'create',
+      });
+
+      // Validações
       if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ error: 'No images provided' });
+        return res.status(400).json({
+          success: false,
+          error: 'No images provided',
+        });
       }
 
       if (!travelName || !location) {
-        return res
-          .status(400)
-          .json({ error: 'Travel name and location are required' });
+        return res.status(400).json({
+          success: false,
+          error: 'Travel name and location are required',
+        });
       }
+
       if (mode === 'append') {
         return res.status(400).json({
+          success: false,
           error: 'Use a rota /travel/:travelId/add para adicionar fotos',
           details: 'Esta rota é apenas para criar novos álbuns',
         });
@@ -185,18 +275,15 @@ router.post(
 
       const folderName = travelName.replace(/\s+/g, '-').toLowerCase();
 
-      console.log('🚀 Uploading travel:', {
-        travelName,
-        location,
-        folderName,
-        imageCount: req.files.length,
-        date: date || 'no date provided',
-        mode: mode || 'create',
-      });
+      console.log('✅ Iniciando upload das imagens para Cloudinary...');
 
       // Upload das imagens
-      const uploadPromises = req.files.map(file => {
+      const uploadPromises = req.files.map((file, index) => {
         return new Promise((resolve, reject) => {
+          console.log(
+            `📸 Uploading travel photo ${index + 1}/${req.files.length}`
+          );
+
           const uploadStream = cloudinary.uploader.upload_stream(
             {
               folder: `travels/${folderName}`,
@@ -204,10 +291,16 @@ router.post(
               transformation: [
                 { width: 1200, height: 1200, crop: 'limit', quality: 'auto' },
               ],
+              timeout: 60000,
             },
             (error, result) => {
-              if (error) reject(error);
-              else resolve(result);
+              if (error) {
+                console.error(`❌ Erro ao fazer upload:`, error);
+                reject(error);
+              } else {
+                console.log(`✅ Upload concluído`);
+                resolve(result);
+              }
             }
           );
           uploadStream.end(file.buffer);
@@ -272,19 +365,16 @@ router.post(
         };
       }
 
-      console.log('📤 Enviando resposta:', {
-        albumCreated: mode !== 'append',
-        markerCreated: !!markerResult?.success,
-        imageCount: images.length,
-        mode: mode || 'create',
-      });
+      console.log('📤 Enviando resposta de sucesso');
 
       res.json(responseData);
     } catch (error) {
       console.error('❌ Travel upload error:', error);
       res.status(500).json({
-        error: 'Failed to upload travel images',
-        details: error.message,
+        success: false,
+        error: error.message || 'Failed to upload travel images',
+        details:
+          process.env.NODE_ENV === 'development' ? error.stack : undefined,
       });
     }
   }
@@ -300,17 +390,24 @@ router.post(
       const { travelId } = req.params;
       const { description } = req.body;
 
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ error: 'No images provided' });
-      }
-
-      console.log('➕ Adding images to existing travel:', {
+      console.log('➕ Adicionando imagens a viagem existente:', {
         travelId,
-        imageCount: req.files.length,
+        imageCount: req.files?.length || 0,
       });
 
-      const uploadPromises = req.files.map(file => {
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No images provided',
+        });
+      }
+
+      const uploadPromises = req.files.map((file, index) => {
         return new Promise((resolve, reject) => {
+          console.log(
+            `📸 Adding photo ${index + 1}/${req.files.length} to ${travelId}`
+          );
+
           const uploadStream = cloudinary.uploader.upload_stream(
             {
               folder: `travels/${travelId}`,
@@ -318,10 +415,16 @@ router.post(
               transformation: [
                 { width: 1200, height: 1200, crop: 'limit', quality: 'auto' },
               ],
+              timeout: 60000,
             },
             (error, result) => {
-              if (error) reject(error);
-              else resolve(result);
+              if (error) {
+                console.error(`❌ Erro ao adicionar foto:`, error);
+                reject(error);
+              } else {
+                console.log(`✅ Foto adicionada`);
+                resolve(result);
+              }
             }
           );
           uploadStream.end(file.buffer);
@@ -347,12 +450,16 @@ router.post(
         images,
         message: `${images.length} fotos adicionadas ao álbum`,
         travelId,
+        description,
+        totalImages: images.length,
       });
     } catch (error) {
       console.error('❌ Add to travel error:', error);
       res.status(500).json({
-        error: 'Failed to add images to travel',
-        details: error.message,
+        success: false,
+        error: error.message || 'Failed to add images to travel',
+        details:
+          process.env.NODE_ENV === 'development' ? error.stack : undefined,
       });
     }
   }
@@ -368,18 +475,38 @@ router.post(
       const { year, category } = req.params;
       const { description } = req.body;
 
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ error: 'No images provided' });
-      }
-
-      console.log('➕ Adding memories to existing year:', {
+      console.log('➕ Adicionando memórias a ano existente:', {
         year,
         category,
-        imageCount: req.files.length,
+        imageCount: req.files?.length || 0,
       });
 
-      const uploadPromises = req.files.map(file => {
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No images provided',
+        });
+      }
+
+      // Validar categoria
+      const validCategories = ['photos', 'school-work'];
+      if (!validCategories.includes(category)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid category. Must be one of: ${validCategories.join(
+            ', '
+          )}`,
+        });
+      }
+
+      const uploadPromises = req.files.map((file, index) => {
         return new Promise((resolve, reject) => {
+          console.log(
+            `📸 Adding memory ${index + 1}/${
+              req.files.length
+            } to ${year}/${category}`
+          );
+
           const uploadStream = cloudinary.uploader.upload_stream(
             {
               folder: `memories/${year}/${category}`,
@@ -387,10 +514,16 @@ router.post(
               transformation: [
                 { width: 1200, height: 1200, crop: 'limit', quality: 'auto' },
               ],
+              timeout: 60000,
             },
             (error, result) => {
-              if (error) reject(error);
-              else resolve(result);
+              if (error) {
+                console.error(`❌ Erro ao adicionar memória:`, error);
+                reject(error);
+              } else {
+                console.log(`✅ Memória adicionada`);
+                resolve(result);
+              }
             }
           );
           uploadStream.end(file.buffer);
@@ -417,12 +550,16 @@ router.post(
         message: `${images.length} imagens adicionadas`,
         year,
         category,
+        description,
+        totalImages: images.length,
       });
     } catch (error) {
       console.error('❌ Add to memories error:', error);
       res.status(500).json({
-        error: 'Failed to add memories',
-        details: error.message,
+        success: false,
+        error: error.message || 'Failed to add memories',
+        details:
+          process.env.NODE_ENV === 'development' ? error.stack : undefined,
       });
     }
   }
@@ -441,10 +578,24 @@ router.delete('/image/:publicId', authenticateToken, async (req, res) => {
 
     if (result.result === 'ok') {
       console.log('✅ Image deleted successfully:', publicId);
-      res.json({ success: true, message: 'Image deleted successfully' });
+      res.json({
+        success: true,
+        message: 'Image deleted successfully',
+        publicId,
+        result: result.result,
+      });
+    } else if (result.result === 'not found') {
+      console.warn('⚠️ Image not found:', publicId);
+      res.status(404).json({
+        success: false,
+        error: 'Image not found',
+        publicId,
+        details: result.result,
+      });
     } else {
       console.warn('⚠️ Cloudinary deletion failed:', result);
       res.status(400).json({
+        success: false,
         error: 'Failed to delete image',
         details: result.result || 'Unknown error',
       });
@@ -452,8 +603,9 @@ router.delete('/image/:publicId', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('❌ Delete error:', error);
     res.status(500).json({
-      error: 'Failed to delete image',
-      details: error.message,
+      success: false,
+      error: error.message || 'Failed to delete image',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
     });
   }
 });
@@ -469,13 +621,57 @@ router.get('/health', authenticateToken, async (req, res) => {
       message: 'Upload service is healthy',
       cloudinary: cloudinaryTest.status === 'ok' ? 'connected' : 'disconnected',
       timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development',
+      version: '1.0.1', // Versão atualizada
     });
   } catch (error) {
     console.error('❌ Health check error:', error);
-    res.status(500).json({
+    res.status(503).json({
       success: false,
       error: 'Health check failed',
       details: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+// Teste de conexão com Cloudinary (sem autenticação para debug)
+router.get('/test-cloudinary', async (req, res) => {
+  try {
+    console.log('🔍 Testando conexão com Cloudinary...');
+    console.log('Cloud Name:', process.env.CLOUDINARY_CLOUD_NAME);
+    console.log('API Key presente:', !!process.env.CLOUDINARY_API_KEY);
+    console.log('API Secret presente:', !!process.env.CLOUDINARY_API_SECRET);
+
+    const result = await cloudinary.api.ping();
+
+    res.json({
+      success: true,
+      message: 'Cloudinary connection successful',
+      result,
+      config: {
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        configured: !!(
+          process.env.CLOUDINARY_CLOUD_NAME &&
+          process.env.CLOUDINARY_API_KEY &&
+          process.env.CLOUDINARY_API_SECRET
+        ),
+      },
+    });
+  } catch (error) {
+    console.error('❌ Cloudinary test error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Cloudinary connection failed',
+      details: error.message,
+      config: {
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        configured: !!(
+          process.env.CLOUDINARY_CLOUD_NAME &&
+          process.env.CLOUDINARY_API_KEY &&
+          process.env.CLOUDINARY_API_SECRET
+        ),
+      },
     });
   }
 });
