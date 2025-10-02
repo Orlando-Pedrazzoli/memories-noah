@@ -1,7 +1,5 @@
-// client/src/pages/UploadPage.jsx - VERSÃO COM SUPORTE HEIC/HEIF
-
-import React, { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useCallback, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { uploadService } from '../services/api';
 import Navbar from '../components/layout/Navbar';
@@ -18,239 +16,15 @@ import {
   Smartphone,
   Monitor,
   FileWarning,
+  Plus,
+  ArrowLeft,
+  Info,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-// ⭐ DETECTAR SE O ARQUIVO É HEIC/HEIF
-const isHeicFile = file => {
-  const extension = file.name.split('.').pop().toLowerCase();
-  return extension === 'heic' || extension === 'heif';
-};
-
-// ⭐ CONVERTER HEIC PARA JPEG (usando biblioteca heic2any)
-const convertHeicToJpeg = async file => {
-  // Verificar se o navegador suporta HEIC nativamente
-  const testImg = new Image();
-  const canDecodeHeic = await new Promise(resolve => {
-    testImg.onload = () => resolve(true);
-    testImg.onerror = () => resolve(false);
-    testImg.src = URL.createObjectURL(file);
-  });
-
-  if (canDecodeHeic) {
-    console.log('✅ Navegador suporta HEIC nativamente');
-    return file;
-  }
-
-  console.log('⚠️ HEIC não suportado, tentando converter...');
-
-  // Tentar usar a API nativa se disponível
-  try {
-    // Verificar se temos a biblioteca heic2any disponível
-    if (typeof window.heic2any !== 'undefined') {
-      const heic2any = window.heic2any;
-      const jpegBlob = await heic2any({
-        blob: file,
-        toType: 'image/jpeg',
-        quality: 0.9,
-      });
-
-      const jpegFile = new File(
-        [jpegBlob],
-        file.name.replace(/\.(heic|heif)$/i, '.jpg'),
-        { type: 'image/jpeg' }
-      );
-
-      console.log('✅ HEIC convertido para JPEG com sucesso');
-      return jpegFile;
-    }
-  } catch (error) {
-    console.warn('⚠️ Conversão HEIC falhou:', error);
-  }
-
-  // Se não conseguir converter, tentar processar no servidor
-  console.log('⚠️ Enviando HEIC para conversão no servidor');
-  return file;
-};
-
-// ⭐ PROCESSAR IMAGEM COM FALLBACK PARA FORMATOS NÃO SUPORTADOS
-const processImageFile = async file => {
-  const maxSize = 10 * 1024 * 1024; // 10MB
-
-  // Verificar tamanho máximo
-  if (file.size > maxSize) {
-    throw new Error(
-      `Arquivo muito grande: ${(file.size / 1024 / 1024).toFixed(
-        2
-      )}MB (máximo: 10MB)`
-    );
-  }
-
-  // Se for HEIC, tentar converter
-  if (isHeicFile(file)) {
-    try {
-      const convertedFile = await convertHeicToJpeg(file);
-      return convertedFile;
-    } catch (error) {
-      console.warn('⚠️ Não foi possível converter HEIC, enviando original');
-      return file;
-    }
-  }
-
-  // Verificar se é um formato de imagem suportado
-  const supportedFormats = [
-    'image/jpeg',
-    'image/jpg',
-    'image/png',
-    'image/gif',
-    'image/webp',
-    'image/bmp',
-  ];
-  if (!supportedFormats.includes(file.type) && !isHeicFile(file)) {
-    // Tentar detectar pelo conteúdo se o type está vazio
-    if (!file.type) {
-      console.warn(
-        '⚠️ Tipo MIME não detectado, tentando processar mesmo assim'
-      );
-    } else {
-      throw new Error(`Formato não suportado: ${file.type}`);
-    }
-  }
-
-  return file;
-};
-
-// ⭐ UTILITÁRIO MELHORADO PARA COMPRESSÃO DE IMAGEM
-const compressImage = async (
-  file,
-  maxWidth = 1920,
-  maxHeight = 1920,
-  quality = 0.85
-) => {
-  return new Promise((resolve, reject) => {
-    // Se o arquivo já é pequeno, não comprimir
-    if (file.size < 500 * 1024) {
-      // < 500KB
-      console.log('📸 Arquivo pequeno, mantendo original');
-      resolve(file);
-      return;
-    }
-
-    const reader = new FileReader();
-
-    reader.onload = e => {
-      const img = new Image();
-
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-
-          let width = img.width;
-          let height = img.height;
-
-          // Calcular dimensões mantendo proporção
-          if (width > height) {
-            if (width > maxWidth) {
-              height = height * (maxWidth / width);
-              width = maxWidth;
-            }
-          } else {
-            if (height > maxHeight) {
-              width = width * (maxHeight / height);
-              height = maxHeight;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-
-          // Desenhar e comprimir
-          ctx.drawImage(img, 0, 0, width, height);
-
-          canvas.toBlob(
-            blob => {
-              if (blob) {
-                const compressedFile = new File(
-                  [blob],
-                  file.name.replace(/\.(heic|heif)$/i, '.jpg'),
-                  {
-                    type: 'image/jpeg',
-                    lastModified: Date.now(),
-                  }
-                );
-
-                console.log(
-                  `📸 Compressão: ${(file.size / 1024 / 1024).toFixed(
-                    2
-                  )}MB → ${(compressedFile.size / 1024 / 1024).toFixed(2)}MB`
-                );
-
-                resolve(compressedFile);
-              } else {
-                reject(new Error('Falha na compressão'));
-              }
-            },
-            'image/jpeg',
-            quality
-          );
-        } catch (error) {
-          console.error('❌ Erro no processamento canvas:', error);
-          reject(error);
-        }
-      };
-
-      img.onerror = error => {
-        console.error('❌ Erro ao carregar imagem:', error);
-        // Se falhar ao carregar, retornar arquivo original
-        resolve(file);
-      };
-
-      img.src = e.target.result;
-    };
-
-    reader.onerror = error => {
-      console.error('❌ Erro ao ler arquivo:', error);
-      reject(error);
-    };
-
-    // Se for HEIC e não conseguir ler como data URL, retornar original
-    if (isHeicFile(file)) {
-      console.log('⚠️ Arquivo HEIC detectado, pulando compressão no cliente');
-      resolve(file);
-      return;
-    }
-
-    reader.readAsDataURL(file);
-  });
-};
-
-// ⭐ DETECTAR SE É DISPOSITIVO MÓVEL
-const isMobileDevice = () => {
-  return (
-    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-      navigator.userAgent
-    ) || window.innerWidth <= 768
-  );
-};
-
-// ⭐ ADICIONAR SCRIPT HEIC2ANY SE NECESSÁRIO
-const loadHeic2anyScript = () => {
-  if (
-    typeof window.heic2any === 'undefined' &&
-    !document.getElementById('heic2any-script')
-  ) {
-    const script = document.createElement('script');
-    script.id = 'heic2any-script';
-    script.src = 'https://unpkg.com/heic2any@0.0.4/dist/heic2any.js';
-    script.async = true;
-    document.head.appendChild(script);
-    console.log('📦 Carregando biblioteca heic2any...');
-  }
-};
-
 const UploadPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -265,13 +39,23 @@ const UploadPage = () => {
     percentage: 0,
   });
 
+  // ⭐ DETECTAR MODO DE ADIÇÃO A ÁLBUM EXISTENTE
+  const isAddingToExisting =
+    location.state?.mode === 'add-to-travel' ||
+    location.state?.mode === 'add-to-year';
+  const existingTravel = location.state?.existingTravel;
+  const existingYear = location.state?.existingYear;
+
+  const isMobileDevice = () => {
+    return (
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent
+      ) || window.innerWidth <= 768
+    );
+  };
+
   const isMobile = isMobileDevice();
   const maxFiles = isMobile ? 5 : uploadType === 'travel' ? 20 : 10;
-
-  // Carregar biblioteca HEIC ao montar o componente
-  React.useEffect(() => {
-    loadHeic2anyScript();
-  }, []);
 
   const {
     register,
@@ -280,7 +64,16 @@ const UploadPage = () => {
     reset,
     watch,
     setValue,
-  } = useForm();
+  } = useForm({
+    defaultValues: {
+      // ⭐ PRÉ-PREENCHER CAMPOS SE ESTIVER ADICIONANDO A ÁLBUM EXISTENTE
+      travelName: existingTravel?.name || '',
+      location: existingTravel?.location || '',
+      date: existingTravel?.date || '',
+      year: existingYear?.year || '',
+      category: existingYear?.category || '',
+    },
+  });
 
   const watchedCategory = watch('category');
   const watchedLocation = watch('location');
@@ -299,7 +92,179 @@ const UploadPage = () => {
     { value: '10-years', label: '10 anos' },
   ];
 
-  // ⭐ FUNÇÃO MELHORADA PARA SELEÇÃO E PROCESSAMENTO DE ARQUIVOS
+  // ⭐ CONFIGURAR TIPO DE UPLOAD BASEADO NO MODO
+  useEffect(() => {
+    if (location.state?.mode === 'add-to-travel') {
+      setUploadType('travel');
+    } else if (location.state?.mode === 'add-to-year') {
+      setUploadType('memories');
+    }
+  }, [location.state]);
+
+  const isHeicFile = file => {
+    const extension = file.name.split('.').pop().toLowerCase();
+    return extension === 'heic' || extension === 'heif';
+  };
+
+  const convertHeicToJpeg = async file => {
+    const testImg = new Image();
+    const canDecodeHeic = await new Promise(resolve => {
+      testImg.onload = () => resolve(true);
+      testImg.onerror = () => resolve(false);
+      testImg.src = URL.createObjectURL(file);
+    });
+
+    if (canDecodeHeic) {
+      console.log('✅ Navegador suporta HEIC nativamente');
+      return file;
+    }
+
+    console.log('⚠️ HEIC não suportado, enviando para servidor processar');
+    return file;
+  };
+
+  const processImageFile = async file => {
+    const maxSize = 10 * 1024 * 1024; // 10MB
+
+    if (file.size > maxSize) {
+      throw new Error(
+        `Arquivo muito grande: ${(file.size / 1024 / 1024).toFixed(
+          2
+        )}MB (máximo: 10MB)`
+      );
+    }
+
+    if (isHeicFile(file)) {
+      try {
+        const convertedFile = await convertHeicToJpeg(file);
+        return convertedFile;
+      } catch (error) {
+        console.warn('⚠️ Não foi possível converter HEIC, enviando original');
+        return file;
+      }
+    }
+
+    const supportedFormats = [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'image/bmp',
+    ];
+
+    if (!supportedFormats.includes(file.type) && !isHeicFile(file)) {
+      if (!file.type) {
+        console.warn(
+          '⚠️ Tipo MIME não detectado, tentando processar mesmo assim'
+        );
+      } else {
+        throw new Error(`Formato não suportado: ${file.type}`);
+      }
+    }
+
+    return file;
+  };
+
+  const compressImage = async (
+    file,
+    maxWidth = 1920,
+    maxHeight = 1920,
+    quality = 0.85
+  ) => {
+    return new Promise((resolve, reject) => {
+      if (file.size < 500 * 1024) {
+        // < 500KB
+        console.log('📸 Arquivo pequeno, mantendo original');
+        resolve(file);
+        return;
+      }
+
+      const reader = new FileReader();
+
+      reader.onload = e => {
+        const img = new Image();
+
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > maxWidth) {
+                height = height * (maxWidth / width);
+                width = maxWidth;
+              }
+            } else {
+              if (height > maxHeight) {
+                width = width * (maxHeight / height);
+                height = maxHeight;
+              }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+
+            ctx.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob(
+              blob => {
+                if (blob) {
+                  const compressedFile = new File(
+                    [blob],
+                    file.name.replace(/\.(heic|heif)$/i, '.jpg'),
+                    {
+                      type: 'image/jpeg',
+                      lastModified: Date.now(),
+                    }
+                  );
+
+                  console.log(
+                    `📸 Compressão: ${(file.size / 1024 / 1024).toFixed(
+                      2
+                    )}MB → ${(compressedFile.size / 1024 / 1024).toFixed(2)}MB`
+                  );
+
+                  resolve(compressedFile);
+                } else {
+                  reject(new Error('Falha na compressão'));
+                }
+              },
+              'image/jpeg',
+              quality
+            );
+          } catch (error) {
+            console.error('❌ Erro no processamento canvas:', error);
+            reject(error);
+          }
+        };
+
+        img.onerror = error => {
+          console.error('❌ Erro ao carregar imagem:', error);
+          resolve(file);
+        };
+
+        img.src = e.target.result;
+      };
+
+      reader.onerror = error => {
+        console.error('❌ Erro ao ler arquivo:', error);
+        reject(error);
+      };
+
+      if (isHeicFile(file)) {
+        console.log('⚠️ Arquivo HEIC detectado, pulando compressão no cliente');
+        resolve(file);
+        return;
+      }
+
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleFileSelection = useCallback(
     async e => {
       const files = Array.from(e.target.files);
@@ -338,10 +303,8 @@ const UploadPage = () => {
           });
 
           try {
-            // ⭐ PROCESSAR ARQUIVO (converter HEIC se necessário)
             let processedFile = await processImageFile(file);
 
-            // ⭐ COMPRIMIR IMAGEM SE HABILITADO E ARQUIVO FOR GRANDE
             if (
               compressionEnabled &&
               processedFile.size > 1024 * 1024 &&
@@ -352,7 +315,6 @@ const UploadPage = () => {
                   `🔄 Comprimindo imagem ${i + 1}: ${processedFile.name}`
                 );
 
-                // Ajustar qualidade baseado no dispositivo
                 const quality = isMobile ? 0.7 : 0.85;
                 const maxDimension = isMobile ? 1280 : 1920;
 
@@ -364,20 +326,17 @@ const UploadPage = () => {
                 );
 
                 if (compressedFile.size >= processedFile.size) {
-                  // Se compressão não reduziu, manter original
                   console.log('⚠️ Mantendo original (compressão não efetiva)');
                 } else {
                   processedFile = compressedFile;
                 }
               } catch (error) {
                 console.error('❌ Erro na compressão:', error);
-                // Continuar com arquivo original se compressão falhar
               }
             }
 
             processedFiles.push(processedFile);
 
-            // Criar preview (com fallback para HEIC)
             let previewUrl;
             try {
               previewUrl = URL.createObjectURL(processedFile);
@@ -410,7 +369,6 @@ const UploadPage = () => {
         setPreviews(newPreviews);
         setUnsupportedFiles(unsupported);
 
-        // Mostrar economia de espaço
         const originalTotal = files.reduce((acc, f) => acc + f.size, 0);
         const compressedTotal = processedFiles.reduce(
           (acc, f) => acc + f.size,
@@ -421,22 +379,15 @@ const UploadPage = () => {
         if (saved > 0) {
           toast.success(
             `Economizado ${(saved / 1024 / 1024).toFixed(1)}MB com compressão!`,
-            {
-              icon: '🗜️',
-              duration: 3000,
-            }
+            { icon: '🗜️', duration: 3000 }
           );
         }
 
-        // Avisar sobre arquivos HEIC
         const heicCount = newPreviews.filter(p => p.isHeic).length;
         if (heicCount > 0) {
           toast.success(
             `${heicCount} arquivo(s) HEIC detectado(s) e processado(s)`,
-            {
-              icon: '📱',
-              duration: 3000,
-            }
+            { icon: '📱', duration: 3000 }
           );
         }
 
@@ -468,7 +419,6 @@ const UploadPage = () => {
     setPreviews(newPreviews);
   };
 
-  // ⭐ FUNÇÃO DE UPLOAD COM PROGRESSO DETALHADO
   const onSubmit = async data => {
     if (selectedFiles.length === 0) {
       toast.error('Selecione pelo menos uma imagem');
@@ -479,8 +429,9 @@ const UploadPage = () => {
       uploadType,
       data,
       fileCount: selectedFiles.length,
-      device: isMobile ? 'mobile' : 'desktop',
-      hasHeic: previews.some(p => p.isHeic),
+      isAddingToExisting,
+      existingTravel,
+      existingYear,
     });
 
     setUploading(true);
@@ -496,7 +447,6 @@ const UploadPage = () => {
     try {
       const formData = new FormData();
 
-      // ⭐ ADICIONAR ARQUIVOS AO FORMDATA
       selectedFiles.forEach(file => {
         formData.append('images', file);
       });
@@ -504,7 +454,9 @@ const UploadPage = () => {
       if (uploadType === 'memories') {
         setUploadProgress({
           step: 2,
-          message: 'Enviando memórias...',
+          message: isAddingToExisting
+            ? 'Adicionando às memórias existentes...'
+            : 'Enviando memórias...',
           details: `Categoria: ${data.category} - Ano: ${data.year}`,
           percentage: 50,
         });
@@ -513,18 +465,26 @@ const UploadPage = () => {
         formData.append('category', data.category);
         formData.append('description', data.description || '');
 
+        if (isAddingToExisting) {
+          formData.append('mode', 'append');
+        }
+
         const response = await uploadService.uploadMemories(formData);
 
         if (response.success) {
           setUploadProgress({
             step: 3,
             message: 'Upload concluído!',
-            details: `${response.images.length} imagens salvas com sucesso`,
+            details: `${response.images.length} imagens ${
+              isAddingToExisting ? 'adicionadas' : 'salvas'
+            } com sucesso`,
             percentage: 100,
           });
 
           toast.success(
-            `${response.images.length} imagens enviadas com sucesso!`
+            `${response.images.length} imagens ${
+              isAddingToExisting ? 'adicionadas ao álbum' : 'enviadas'
+            } com sucesso!`
           );
 
           setTimeout(() => {
@@ -541,7 +501,9 @@ const UploadPage = () => {
       } else {
         setUploadProgress({
           step: 2,
-          message: 'Criando álbum de viagem...',
+          message: isAddingToExisting
+            ? 'Adicionando ao álbum existente...'
+            : 'Criando álbum de viagem...',
           details: `Destino: ${data.location}`,
           percentage: 50,
         });
@@ -557,6 +519,10 @@ const UploadPage = () => {
         formData.append('date', data.date);
         formData.append('description', data.description || '');
 
+        if (isAddingToExisting) {
+          formData.append('mode', 'append');
+        }
+
         if (window.selectedLocationCoords) {
           formData.append('latitude', window.selectedLocationCoords.lat);
           formData.append('longitude', window.selectedLocationCoords.lon);
@@ -567,12 +533,20 @@ const UploadPage = () => {
         if (response.success) {
           setUploadProgress({
             step: 4,
-            message: 'Álbum criado com sucesso!',
+            message: isAddingToExisting
+              ? 'Fotos adicionadas!'
+              : 'Álbum criado com sucesso!',
             details: 'Redirecionando...',
             percentage: 100,
           });
 
-          toast.success(`Álbum "${data.travelName}" criado com sucesso!`);
+          toast.success(
+            isAddingToExisting
+              ? `${
+                  response.images?.length || selectedFiles.length
+                } fotos adicionadas ao álbum "${data.travelName}"!`
+              : `Álbum "${data.travelName}" criado com sucesso!`
+          );
 
           const travelId = data.travelName.toLowerCase().replace(/\s+/g, '-');
 
@@ -634,15 +608,73 @@ const UploadPage = () => {
 
       <main className='max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8'>
         <div className='mb-8'>
+          {/* ⭐ HEADER COM INDICAÇÃO DE MODO */}
+          {isAddingToExisting && (
+            <button
+              onClick={() => navigate(-1)}
+              className='flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-4'
+            >
+              <ArrowLeft className='h-4 w-4' />
+              <span>Voltar ao álbum</span>
+            </button>
+          )}
+
           <h1 className='text-3xl font-bold text-gray-900 mb-4'>
-            Adicionar Memórias
+            {isAddingToExisting ? (
+              <>
+                <span className='text-blue-600'>Adicionar a: </span>
+                {existingTravel?.name || existingYear?.yearLabel}
+              </>
+            ) : (
+              'Adicionar Memórias'
+            )}
           </h1>
+
           <p className='text-gray-600'>
-            Carregue novas fotos e trabalhos escolares para preservar momentos
-            especiais
+            {isAddingToExisting
+              ? 'Selecione mais fotos para adicionar ao álbum existente'
+              : 'Carregue novas fotos e trabalhos escolares para preservar momentos especiais'}
           </p>
 
-          {/* ⭐ INDICADOR DE DISPOSITIVO E CONFIGURAÇÕES */}
+          {/* ⭐ INFORMAÇÃO DO ÁLBUM EXISTENTE */}
+          {isAddingToExisting && (
+            <div className='mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg'>
+              <div className='flex items-start space-x-3'>
+                <Info className='h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5' />
+                <div className='text-sm'>
+                  <p className='font-medium text-blue-900'>
+                    Adicionando ao álbum existente
+                  </p>
+                  {existingTravel && (
+                    <div className='text-blue-700 mt-1'>
+                      <p>📍 {existingTravel.location}</p>
+                      {existingTravel.date && (
+                        <p>
+                          📅{' '}
+                          {new Date(existingTravel.date).toLocaleDateString(
+                            'pt-BR'
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {existingYear && (
+                    <div className='text-blue-700 mt-1'>
+                      <p>👶 {existingYear.yearLabel}</p>
+                      <p>
+                        📁{' '}
+                        {existingYear.category === 'photos'
+                          ? 'Fotos'
+                          : 'Trabalhos Escolares'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Indicador de dispositivo e configurações */}
           <div className='mt-4 flex flex-wrap items-center gap-4'>
             <div className='flex items-center space-x-2 text-sm'>
               {isMobile ? (
@@ -676,58 +708,60 @@ const UploadPage = () => {
           </div>
         </div>
 
-        {/* Upload Type Selector */}
-        <div className='bg-white rounded-lg shadow-md p-6 mb-6'>
-          <h2 className='text-lg font-semibold text-gray-900 mb-4'>
-            Tipo de Upload
-          </h2>
+        {/* Upload Type Selector - Ocultar se estiver adicionando a existente */}
+        {!isAddingToExisting && (
+          <div className='bg-white rounded-lg shadow-md p-6 mb-6'>
+            <h2 className='text-lg font-semibold text-gray-900 mb-4'>
+              Tipo de Upload
+            </h2>
 
-          <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
-            <button
-              type='button'
-              onClick={() => setUploadType('memories')}
-              className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                uploadType === 'memories'
-                  ? 'border-primary-500 bg-primary-50 text-primary-700'
-                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
-              }`}
-              disabled={uploading || processingImages}
-            >
-              <div className='flex items-center space-x-3'>
-                <ImageIcon className='h-6 w-6' />
-                <div className='text-left'>
-                  <h3 className='font-medium'>Memórias do Ano</h3>
-                  <p className='text-sm opacity-75'>
-                    Fotos e trabalhos escolares
-                  </p>
+            <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+              <button
+                type='button'
+                onClick={() => setUploadType('memories')}
+                className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                  uploadType === 'memories'
+                    ? 'border-primary-500 bg-primary-50 text-primary-700'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                }`}
+                disabled={uploading || processingImages}
+              >
+                <div className='flex items-center space-x-3'>
+                  <ImageIcon className='h-6 w-6' />
+                  <div className='text-left'>
+                    <h3 className='font-medium'>Memórias do Ano</h3>
+                    <p className='text-sm opacity-75'>
+                      Fotos e trabalhos escolares
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
 
-            <button
-              type='button'
-              onClick={() => setUploadType('travel')}
-              className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                uploadType === 'travel'
-                  ? 'border-primary-500 bg-primary-50 text-primary-700'
-                  : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
-              }`}
-              disabled={uploading || processingImages}
-            >
-              <div className='flex items-center space-x-3'>
-                <Upload className='h-6 w-6' />
-                <div className='text-left'>
-                  <h3 className='font-medium'>Álbum de Viagem</h3>
-                  <p className='text-sm opacity-75'>
-                    Fotos de uma viagem específica
-                  </p>
+              <button
+                type='button'
+                onClick={() => setUploadType('travel')}
+                className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                  uploadType === 'travel'
+                    ? 'border-primary-500 bg-primary-50 text-primary-700'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                }`}
+                disabled={uploading || processingImages}
+              >
+                <div className='flex items-center space-x-3'>
+                  <Upload className='h-6 w-6' />
+                  <div className='text-left'>
+                    <h3 className='font-medium'>Álbum de Viagem</h3>
+                    <p className='text-sm opacity-75'>
+                      Fotos de uma viagem específica
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* ⭐ PROGRESS INDICATOR */}
+        {/* Progress Indicator */}
         {(uploading || processingImages) && (
           <div className='bg-white rounded-lg shadow-md p-6 mb-6'>
             <div className='flex items-center space-x-3 mb-4'>
@@ -757,7 +791,6 @@ const UploadPage = () => {
               </p>
             )}
 
-            {/* Progress Bar */}
             {uploadProgress.percentage > 0 && uploadProgress.step !== -1 && (
               <div className='w-full bg-gray-200 rounded-full h-2'>
                 <div
@@ -770,27 +803,6 @@ const UploadPage = () => {
                 ></div>
               </div>
             )}
-          </div>
-        )}
-
-        {/* ⭐ ARQUIVOS NÃO SUPORTADOS */}
-        {unsupportedFiles.length > 0 && (
-          <div className='bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6'>
-            <div className='flex items-start space-x-3'>
-              <FileWarning className='h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5' />
-              <div className='flex-1'>
-                <h4 className='text-sm font-medium text-yellow-800 mb-2'>
-                  Arquivos não processados ({unsupportedFiles.length})
-                </h4>
-                <ul className='text-sm text-yellow-700 space-y-1'>
-                  {unsupportedFiles.map((file, index) => (
-                    <li key={index}>
-                      • {file.name}: {file.error}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
           </div>
         )}
 
@@ -814,14 +826,24 @@ const UploadPage = () => {
                       className={`input-field ${
                         errors.year ? 'border-red-500' : ''
                       }`}
-                      disabled={uploading || processingImages}
+                      disabled={
+                        uploading || processingImages || isAddingToExisting
+                      }
                     >
-                      <option value=''>Selecione o ano</option>
-                      {yearOptions.map(option => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
+                      {isAddingToExisting && existingYear ? (
+                        <option value={existingYear.year}>
+                          {existingYear.yearLabel}
                         </option>
-                      ))}
+                      ) : (
+                        <>
+                          <option value=''>Selecione o ano</option>
+                          {yearOptions.map(option => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </>
+                      )}
                     </select>
                     {errors.year && (
                       <p className='mt-1 text-sm text-red-600'>
@@ -841,11 +863,25 @@ const UploadPage = () => {
                       className={`input-field ${
                         errors.category ? 'border-red-500' : ''
                       }`}
-                      disabled={uploading || processingImages}
+                      disabled={
+                        uploading || processingImages || isAddingToExisting
+                      }
                     >
-                      <option value=''>Selecione a categoria</option>
-                      <option value='photos'>Fotos Gerais</option>
-                      <option value='school-work'>Trabalhos Escolares</option>
+                      {isAddingToExisting && existingYear ? (
+                        <option value={existingYear.category}>
+                          {existingYear.category === 'photos'
+                            ? 'Fotos Gerais'
+                            : 'Trabalhos Escolares'}
+                        </option>
+                      ) : (
+                        <>
+                          <option value=''>Selecione a categoria</option>
+                          <option value='photos'>Fotos Gerais</option>
+                          <option value='school-work'>
+                            Trabalhos Escolares
+                          </option>
+                        </>
+                      )}
                     </select>
                     {errors.category && (
                       <p className='mt-1 text-sm text-red-600'>
@@ -869,7 +905,9 @@ const UploadPage = () => {
                         errors.travelName ? 'border-red-500' : ''
                       }`}
                       placeholder='Ex: Viagem para Paris'
-                      disabled={uploading || processingImages}
+                      disabled={
+                        uploading || processingImages || isAddingToExisting
+                      }
                     />
                     {errors.travelName && (
                       <p className='mt-1 text-sm text-red-600'>
@@ -882,12 +920,24 @@ const UploadPage = () => {
                     <label className='block text-sm font-medium text-gray-700 mb-2'>
                       Localização *
                     </label>
-                    <LocationPicker
-                      value={watchedLocation || ''}
-                      onChange={value => setValue('location', value)}
-                      disabled={uploading || processingImages}
-                      error={errors.location?.message}
-                    />
+                    {isAddingToExisting && existingTravel ? (
+                      <input
+                        {...register('location', {
+                          required: 'Localização é obrigatória',
+                        })}
+                        type='text'
+                        className='input-field'
+                        value={existingTravel.location}
+                        disabled
+                      />
+                    ) : (
+                      <LocationPicker
+                        value={watchedLocation || ''}
+                        onChange={value => setValue('location', value)}
+                        disabled={uploading || processingImages}
+                        error={errors.location?.message}
+                      />
+                    )}
                     <input
                       {...register('location', {
                         required: 'Localização é obrigatória',
@@ -906,7 +956,9 @@ const UploadPage = () => {
                       className={`input-field ${
                         errors.date ? 'border-red-500' : ''
                       }`}
-                      disabled={uploading || processingImages}
+                      disabled={
+                        uploading || processingImages || isAddingToExisting
+                      }
                     />
                     {errors.date && (
                       <p className='mt-1 text-sm text-red-600'>
@@ -1058,11 +1110,17 @@ const UploadPage = () => {
           <div className='flex justify-end space-x-4'>
             <button
               type='button'
-              onClick={resetForm}
+              onClick={() => {
+                if (isAddingToExisting) {
+                  navigate(-1);
+                } else {
+                  resetForm();
+                }
+              }}
               className='btn-secondary'
               disabled={uploading || processingImages}
             >
-              Limpar
+              {isAddingToExisting ? 'Cancelar' : 'Limpar'}
             </button>
 
             <button
@@ -1085,7 +1143,7 @@ const UploadPage = () => {
               ) : (
                 <>
                   <CheckCircle className='h-4 w-4' />
-                  <span>Enviar</span>
+                  <span>{isAddingToExisting ? 'Adicionar' : 'Enviar'}</span>
                 </>
               )}
             </button>

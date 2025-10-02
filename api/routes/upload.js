@@ -27,19 +27,23 @@ const upload = multer({
   },
 });
 
-// ⭐ FUNÇÃO AUXILIAR MELHORADA: Criar marker de viagem com geocoding interno
-const createTravelMarkerImproved = async travelData => {
+// ⭐ FUNÇÃO AUXILIAR: Criar/atualizar marker de viagem
+const createOrUpdateTravelMarker = async travelData => {
   try {
     const { folderName, travelName, location, date } = travelData;
 
-    console.log('🗺️ Creating travel marker for:', folderName, 'at:', location);
+    console.log(
+      '🗺️ Creating/updating travel marker for:',
+      folderName,
+      'at:',
+      location
+    );
 
-    // ⭐ GEOCODING DIRETO NO BACKEND (mais confiável)
     let coordinates = null;
 
     if (location) {
       try {
-        // Usar Nominatim (OpenStreetMap) - mesmo do frontend
+        // Usar Nominatim (OpenStreetMap)
         const geoResponse = await fetch(
           `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
             location
@@ -60,8 +64,6 @@ const createTravelMarkerImproved = async travelData => {
               parseFloat(geoData[0].lon),
             ];
             console.log('✅ Geocoding bem-sucedido:', coordinates);
-          } else {
-            console.log('⚠️ Nenhum resultado de geocoding para:', location);
           }
         }
       } catch (geoError) {
@@ -69,7 +71,6 @@ const createTravelMarkerImproved = async travelData => {
       }
     }
 
-    // ⭐ RETORNAR DADOS DO MARKER (será usado pela função de chamada da API)
     return {
       success: true,
       markerData: {
@@ -77,7 +78,7 @@ const createTravelMarkerImproved = async travelData => {
         name: travelName,
         location,
         date,
-        coordinates, // Incluir coordenadas se disponíveis
+        coordinates,
       },
       hasCoordinates: !!coordinates,
       coordinates: coordinates,
@@ -88,91 +89,25 @@ const createTravelMarkerImproved = async travelData => {
   }
 };
 
-// ⭐ FUNÇÃO AUXILIAR: Fazer chamada para criar marker via API interna
-const createTravelMarker = async (travelData, authHeader) => {
-  try {
-    const { folderName, travelName, location, date } = travelData;
-
-    console.log('🗺️ Creating travel marker via API for:', folderName);
-
-    const markerData = {
-      travelId: folderName,
-      name: travelName,
-      location,
-      date,
-    };
-
-    // Fazer chamada interna para o endpoint de markers
-    const baseUrl = process.env.API_BASE_URL || 'http://localhost:3001';
-    const response = await fetch(`${baseUrl}/api/travel/markers`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authHeader,
-      },
-      body: JSON.stringify(markerData),
-    });
-
-    if (response.ok) {
-      const result = await response.json();
-      console.log(
-        '✅ Travel marker created via API:',
-        result.hasCoordinates ? 'with coordinates' : 'without coordinates'
-      );
-      return result;
-    } else {
-      console.warn(
-        '⚠️ API call failed:',
-        response.status,
-        await response.text()
-      );
-    }
-  } catch (err) {
-    console.error('⚠️ Failed to create travel marker via API:', err.message);
-  }
-  return null;
-};
-
-// ⭐ FUNÇÃO AUXILIAR: Atualizar contagem de imagens
-const updateImageCount = async (travelId, imageCount, authHeader) => {
-  try {
-    const baseUrl = process.env.API_BASE_URL || 'http://localhost:3001';
-    const response = await fetch(
-      `${baseUrl}/api/travel/markers/${travelId}/count`,
-      {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: authHeader,
-        },
-        body: JSON.stringify({ imageCount }),
-      }
-    );
-
-    if (response.ok) {
-      console.log('✅ Updated image count for:', travelId, 'to:', imageCount);
-      return true;
-    } else {
-      console.warn('⚠️ Failed to update image count:', response.status);
-    }
-  } catch (err) {
-    console.error('⚠️ Failed to update image count:', err.message);
-  }
-  return false;
-};
-
-// Upload memories (photos/school work) - INALTERADO
+// ⭐ ATUALIZADO: Upload memories com suporte para modo append
 router.post(
   '/memories',
   authenticateToken,
   upload.array('images', 10),
   async (req, res) => {
     try {
-      const { year, category, description } = req.body;
+      const { year, category, description, mode } = req.body;
 
       if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: 'No images provided' });
       }
+
+      console.log('📤 Upload de memórias:', {
+        year,
+        category,
+        mode: mode || 'create',
+        fileCount: req.files.length,
+      });
 
       const uploadPromises = req.files.map(file => {
         return new Promise((resolve, reject) => {
@@ -201,12 +136,20 @@ router.post(
         width: result.width,
         height: result.height,
         format: result.format,
+        bytes: result.bytes,
+        created_at: result.created_at,
       }));
+
+      const message =
+        mode === 'append'
+          ? `${images.length} imagens adicionadas ao álbum existente`
+          : `${images.length} imagens enviadas com sucesso`;
 
       res.json({
         success: true,
         images,
-        message: `${images.length} images uploaded successfully`,
+        message,
+        mode: mode || 'create',
       });
     } catch (error) {
       console.error('Upload error:', error);
@@ -215,14 +158,14 @@ router.post(
   }
 );
 
-// ⭐ ATUALIZADO: Upload travel photos com criação automática de marker MELHORADA
+// ⭐ ATUALIZADO: Upload travel photos com suporte para modo append
 router.post(
   '/travel',
   authenticateToken,
   upload.array('images', 20),
   async (req, res) => {
     try {
-      const { travelName, location, date, description } = req.body;
+      const { travelName, location, date, description, mode } = req.body;
 
       if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: 'No images provided' });
@@ -242,9 +185,10 @@ router.post(
         folderName,
         imageCount: req.files.length,
         date: date || 'no date provided',
+        mode: mode || 'create',
       });
 
-      // 1. ⭐ UPLOAD DAS IMAGENS PRIMEIRO
+      // Upload das imagens
       const uploadPromises = req.files.map(file => {
         return new Promise((resolve, reject) => {
           const uploadStream = cloudinary.uploader.upload_stream(
@@ -272,56 +216,30 @@ router.post(
         width: result.width,
         height: result.height,
         format: result.format,
+        bytes: result.bytes,
+        created_at: result.created_at,
       }));
 
       console.log('✅ Images uploaded successfully:', images.length);
 
-      // 2. ⭐ CRIAR MARKER COM CHAMADA INTERNA MELHORADA
+      // Se não for modo append, criar/atualizar marker
       let markerResult = null;
 
-      try {
-        console.log('🗺️ Chamando endpoint interno para criar marker...');
-
-        markerResult = await createTravelMarker(
-          {
-            folderName,
-            travelName,
-            location,
-            date,
-          },
-          req.headers.authorization
-        );
-
-        if (markerResult && markerResult.success) {
-          console.log(
-            '✅ Marker criado via API interna:',
-            markerResult.hasCoordinates ? 'com coordenadas' : 'sem coordenadas'
-          );
-        } else {
-          console.warn('⚠️ Falha ao criar marker via API');
-        }
-      } catch (markerError) {
-        console.error('⚠️ Erro ao criar marker via API:', markerError.message);
+      if (mode !== 'append') {
+        markerResult = await createOrUpdateTravelMarker({
+          folderName,
+          travelName,
+          location,
+          date,
+        });
       }
 
-      // 3. ⭐ ATUALIZAR CONTAGEM DE IMAGENS NO MARKER
-      if (markerResult && markerResult.success) {
-        try {
-          const countUpdated = await updateImageCount(
-            folderName,
-            images.length,
-            req.headers.authorization
-          );
+      // Resposta
+      const message =
+        mode === 'append'
+          ? `${images.length} fotos adicionadas ao álbum "${travelName}"`
+          : `Álbum "${travelName}" criado com ${images.length} imagens`;
 
-          if (countUpdated) {
-            console.log('✅ Contagem de imagens atualizada no marker');
-          }
-        } catch (countError) {
-          console.error('⚠️ Erro ao atualizar contagem:', countError.message);
-        }
-      }
-
-      // 4. ⭐ RESPOSTA COMPLETA COM INFORMAÇÕES DO MARKER
       const responseData = {
         success: true,
         travel: {
@@ -334,38 +252,25 @@ router.post(
           folder: folderName,
           imageCount: images.length,
         },
-        message: `Travel album "${travelName}" created with ${images.length} images`,
+        message,
+        mode: mode || 'create',
       };
 
-      // ⭐ ADICIONAR informação sobre o marker se foi criado
+      // Adicionar informação do marker se foi criado
       if (markerResult && markerResult.success) {
         responseData.marker = {
           created: true,
           hasCoordinates: markerResult.hasCoordinates || false,
           location: location,
-          coordinates: markerResult.marker?.coordinates || null,
+          coordinates: markerResult.markerData?.coordinates || null,
         };
-
-        if (markerResult.hasCoordinates) {
-          responseData.message += ` e adicionado ao mapa!`;
-        } else {
-          responseData.message += ` (localização não encontrada para o mapa)`;
-        }
-      } else {
-        responseData.marker = {
-          created: false,
-          hasCoordinates: false,
-          location: location,
-          coordinates: null,
-        };
-        responseData.message += ` (marker não pôde ser criado)`;
       }
 
-      console.log('📤 Enviando resposta completa:', {
-        albumCreated: true,
-        markerCreated: responseData.marker.created,
-        hasCoordinates: responseData.marker.hasCoordinates,
+      console.log('📤 Enviando resposta:', {
+        albumCreated: mode !== 'append',
+        markerCreated: !!markerResult?.success,
         imageCount: images.length,
+        mode: mode || 'create',
       });
 
       res.json(responseData);
@@ -379,7 +284,145 @@ router.post(
   }
 );
 
-// ⭐ DELETE IMAGE - MELHORADO COM LOGS
+// ⭐ NOVO: Endpoint específico para adicionar fotos a viagem existente
+router.post(
+  '/travel/:travelId/add',
+  authenticateToken,
+  upload.array('images', 20),
+  async (req, res) => {
+    try {
+      const { travelId } = req.params;
+      const { description } = req.body;
+
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: 'No images provided' });
+      }
+
+      console.log('➕ Adding images to existing travel:', {
+        travelId,
+        imageCount: req.files.length,
+      });
+
+      const uploadPromises = req.files.map(file => {
+        return new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            {
+              folder: `travels/${travelId}`,
+              resource_type: 'image',
+              transformation: [
+                { width: 1200, height: 1200, crop: 'limit', quality: 'auto' },
+              ],
+            },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            }
+          );
+          uploadStream.end(file.buffer);
+        });
+      });
+
+      const uploadResults = await Promise.all(uploadPromises);
+
+      const images = uploadResults.map(result => ({
+        public_id: result.public_id,
+        url: result.secure_url,
+        width: result.width,
+        height: result.height,
+        format: result.format,
+        bytes: result.bytes,
+        created_at: result.created_at,
+      }));
+
+      console.log('✅ Images added successfully:', images.length);
+
+      res.json({
+        success: true,
+        images,
+        message: `${images.length} fotos adicionadas ao álbum`,
+        travelId,
+      });
+    } catch (error) {
+      console.error('❌ Add to travel error:', error);
+      res.status(500).json({
+        error: 'Failed to add images to travel',
+        details: error.message,
+      });
+    }
+  }
+);
+
+// ⭐ NOVO: Endpoint específico para adicionar memórias a ano existente
+router.post(
+  '/memories/:year/:category/add',
+  authenticateToken,
+  upload.array('images', 10),
+  async (req, res) => {
+    try {
+      const { year, category } = req.params;
+      const { description } = req.body;
+
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ error: 'No images provided' });
+      }
+
+      console.log('➕ Adding memories to existing year:', {
+        year,
+        category,
+        imageCount: req.files.length,
+      });
+
+      const uploadPromises = req.files.map(file => {
+        return new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            {
+              folder: `memories/${year}/${category}`,
+              resource_type: 'image',
+              transformation: [
+                { width: 1200, height: 1200, crop: 'limit', quality: 'auto' },
+              ],
+            },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            }
+          );
+          uploadStream.end(file.buffer);
+        });
+      });
+
+      const uploadResults = await Promise.all(uploadPromises);
+
+      const images = uploadResults.map(result => ({
+        public_id: result.public_id,
+        url: result.secure_url,
+        width: result.width,
+        height: result.height,
+        format: result.format,
+        bytes: result.bytes,
+        created_at: result.created_at,
+      }));
+
+      console.log('✅ Memories added successfully:', images.length);
+
+      res.json({
+        success: true,
+        images,
+        message: `${images.length} imagens adicionadas`,
+        year,
+        category,
+      });
+    } catch (error) {
+      console.error('❌ Add to memories error:', error);
+      res.status(500).json({
+        error: 'Failed to add memories',
+        details: error.message,
+      });
+    }
+  }
+);
+
+// DELETE IMAGE - Com logs melhorados
 router.delete('/image/:publicId', authenticateToken, async (req, res) => {
   try {
     const { publicId } = req.params;
@@ -409,42 +452,7 @@ router.delete('/image/:publicId', authenticateToken, async (req, res) => {
   }
 });
 
-// ⭐ NOVO: Endpoint para testar geocoding
-router.post('/test-geocoding', authenticateToken, async (req, res) => {
-  try {
-    const { location } = req.body;
-
-    if (!location) {
-      return res.status(400).json({ error: 'Location is required' });
-    }
-
-    console.log('🧪 Testing geocoding for:', location);
-
-    const result = await createTravelMarkerImproved({
-      folderName: 'test',
-      travelName: 'Test Travel',
-      location,
-      date: new Date().toISOString(),
-    });
-
-    res.json({
-      success: true,
-      location,
-      result,
-      message: result?.hasCoordinates
-        ? `Location found: ${result.coordinates}`
-        : 'Location not found',
-    });
-  } catch (error) {
-    console.error('❌ Geocoding test error:', error);
-    res.status(500).json({
-      error: 'Geocoding test failed',
-      details: error.message,
-    });
-  }
-});
-
-// ⭐ NOVO: Health check para upload service
+// Health check para upload service
 router.get('/health', authenticateToken, async (req, res) => {
   try {
     // Testar conexão com Cloudinary
