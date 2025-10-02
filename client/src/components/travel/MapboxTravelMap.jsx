@@ -1,4 +1,4 @@
-// client/src/components/travel/MapboxTravelMap.jsx - VERSÃO CORRIGIDA COM FIX DOS MARKERS
+// client/src/components/travel/MapboxTravelMap.jsx - VERSÃO OTIMIZADA PARA MOBILE
 
 import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
@@ -11,16 +11,13 @@ import {
   AlertCircle,
   Globe,
   Compass,
+  Smartphone,
+  Monitor,
 } from 'lucide-react';
 
-// ⭐ CONFIGURAÇÃO ROBUSTA DE TOKEN
+// ⭐ CONFIGURAÇÃO DE TOKEN
 const getMapboxToken = () => {
   const token = import.meta.env.VITE_MAPBOX_TOKEN;
-  console.log('🔍 Verificando token Mapbox:', {
-    hasToken: !!token,
-    tokenStart: token ? token.substring(0, 10) + '...' : 'undefined',
-    environment: import.meta.env.MODE,
-  });
   return token;
 };
 
@@ -30,38 +27,146 @@ if (!MAPBOX_TOKEN || !MAPBOX_TOKEN.startsWith('pk.')) {
   console.error('❌ Token Mapbox inválido ou ausente:', MAPBOX_TOKEN);
 } else {
   mapboxgl.accessToken = MAPBOX_TOKEN;
-  console.log('✅ Token Mapbox configurado');
 }
 
-// ⭐⭐⭐ ADICIONAR ESTILOS CSS PARA ANIMAÇÃO PULSE
-const addCustomStyles = () => {
-  if (!document.getElementById('mapbox-custom-styles')) {
-    const style = document.createElement('style');
-    style.id = 'mapbox-custom-styles';
-    style.textContent = `
-      @keyframes pulse {
-        0% {
-          transform: scale(1);
-          opacity: 0.4;
-        }
-        50% {
-          transform: scale(1.3);
-          opacity: 0.2;
-        }
-        100% {
-          transform: scale(1);
-          opacity: 0.4;
-        }
-      }
+// ⭐ DETECÇÃO DE DISPOSITIVO MÓVEL
+const isMobileDevice = () => {
+  return (
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      navigator.userAgent
+    ) ||
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0 ||
+    window.innerWidth <= 768
+  );
+};
+
+// ⭐ CRIAR MARKER SIMPLES PARA MOBILE
+const createMobileMarker = markerData => {
+  const el = document.createElement('div');
+  el.className = 'mapbox-marker-mobile';
+
+  // Usar design mais simples para mobile
+  el.innerHTML = `
+    <div style="
+      width: 40px; 
+      height: 40px; 
+      position: relative;
+      cursor: pointer;
+      transform: translate(-20px, -40px);
+    ">
+      <!-- Pin simples SVG -->
+      <svg width="40" height="40" viewBox="0 0 40 40" style="
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+      ">
+        <!-- Base do pin -->
+        <path d="M20 0 C9 0 0 9 0 20 C0 35 20 40 20 40 S40 35 40 20 C40 9 31 0 20 0 Z" 
+              fill="#ef4444" 
+              stroke="white" 
+              stroke-width="2"/>
+        <!-- Círculo interno -->
+        <circle cx="20" cy="18" r="8" fill="white"/>
+        <!-- Número de fotos -->
+        <text x="20" y="23" text-anchor="middle" 
+              font-family="Arial" font-size="12" font-weight="bold" fill="#ef4444">
+          ${markerData.imageCount || ''}
+        </text>
+      </svg>
       
-      .custom-marker {
+      <!-- Label simples (sempre visível no mobile) -->
+      <div style="
         position: absolute;
-        top: 0;
-        left: 0;
-      }
-    `;
-    document.head.appendChild(style);
-  }
+        top: 42px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0,0,0,0.75);
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+        white-space: nowrap;
+        max-width: 100px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        pointer-events: none;
+      ">
+        ${markerData.name}
+      </div>
+    </div>
+  `;
+
+  return el;
+};
+
+// ⭐ CRIAR MARKER DESKTOP (mantém o design original)
+const createDesktopMarker = markerData => {
+  const el = document.createElement('div');
+
+  el.innerHTML = `
+    <div style="
+      width: 50px; 
+      height: 70px; 
+      position: relative;
+      cursor: pointer;
+      transform: translate(-25px, -70px);
+    ">
+      <!-- Pin -->
+      <div style="
+        position: absolute;
+        width: 50px;
+        height: 50px;
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        border-radius: 50% 50% 50% 0;
+        transform: rotate(-45deg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+        border: 3px solid white;
+      ">
+        <span style="
+          transform: rotate(45deg);
+          color: white;
+          font-weight: bold;
+          font-size: 18px;
+        ">
+          ${markerData.imageCount || '📍'}
+        </span>
+      </div>
+      
+      <!-- Label hover -->
+      <div class="marker-label-desktop" style="
+        position: absolute;
+        top: 75px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0,0,0,0.85);
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+      ">
+        ${markerData.name}
+      </div>
+    </div>
+  `;
+
+  // Adicionar hover effects apenas para desktop
+  el.addEventListener('mouseenter', () => {
+    const label = el.querySelector('.marker-label-desktop');
+    if (label) label.style.opacity = '1';
+  });
+
+  el.addEventListener('mouseleave', () => {
+    const label = el.querySelector('.marker-label-desktop');
+    if (label) label.style.opacity = '0';
+  });
+
+  return el;
 };
 
 const MapboxTravelMap = ({
@@ -73,14 +178,14 @@ const MapboxTravelMap = ({
   const mapContainer = useRef(null);
   const map = useRef(null);
   const markersRefs = useRef({});
+  const popupsRefs = useRef({});
   const [mapStyle, setMapStyle] = useState(
     'mapbox://styles/mapbox/satellite-streets-v12'
   );
-  const [is3D, setIs3D] = useState(true);
+  const [is3D, setIs3D] = useState(false); // Desabilitar 3D por padrão no mobile
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState(null);
-  const [markersLoaded, setMarkersLoaded] = useState(false);
-  const [hoveredMarkerId, setHoveredMarkerId] = useState(null);
+  const [deviceType, setDeviceType] = useState('desktop');
 
   const mapStyles = [
     { id: 'satellite-streets-v12', name: '🛰️ Satélite' },
@@ -90,7 +195,25 @@ const MapboxTravelMap = ({
     { id: 'light-v11', name: '☀️ Claro' },
   ];
 
-  // ⭐ FUNÇÃO PARA VALIDAR COORDENADAS
+  // ⭐ DETECTAR TIPO DE DISPOSITIVO
+  useEffect(() => {
+    const checkDevice = () => {
+      const isMobile = isMobileDevice();
+      setDeviceType(isMobile ? 'mobile' : 'desktop');
+
+      // Desabilitar 3D automaticamente no mobile
+      if (isMobile) {
+        setIs3D(false);
+      }
+    };
+
+    checkDevice();
+    window.addEventListener('resize', checkDevice);
+
+    return () => window.removeEventListener('resize', checkDevice);
+  }, []);
+
+  // ⭐ VALIDAR COORDENADAS
   const isValidCoordinate = coord => {
     return (
       coord &&
@@ -107,336 +230,11 @@ const MapboxTravelMap = ({
     );
   };
 
-  // ⭐⭐⭐ FUNÇÃO CORRIGIDA PARA CRIAR MARKER ELEMENT (sem bug de hover)
-  const createMarkerElement = (markerData, index) => {
-    const el = document.createElement('div');
-    el.className = 'custom-marker';
-
-    // ⭐ IMPORTANTE: NÃO aplicar transform no elemento raiz!
-    el.innerHTML = `
-      <div class="marker-wrapper" style="
-        width: 50px; 
-        height: 70px; 
-        position: relative;
-        margin-left: -25px;
-        margin-top: -70px;
-      ">
-        <!-- Container interno para animações -->
-        <div class="marker-inner" style="
-          width: 100%;
-          height: 100%;
-          position: relative;
-          transition: transform 0.3s ease;
-          transform-origin: bottom center;
-        ">
-          <!-- Pulsação animada -->
-          <div class="marker-pulse" style="
-            position: absolute;
-            top: -5px;
-            left: -5px;
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            background: rgba(239, 68, 68, 0.4);
-            animation: pulse 2s infinite;
-          "></div>
-          
-          <!-- Pin principal -->
-          <div class="marker-pin" style="
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 50px;
-            height: 50px;
-            background: linear-gradient(135deg, #ef4444, #dc2626);
-            border-radius: 50% 50% 50% 0;
-            transform: rotate(-45deg);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: bold;
-            font-size: 18px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.5);
-            border: 3px solid white;
-            transition: all 0.3s ease;
-          ">
-            <span style="transform: rotate(45deg);">
-              ${markerData.imageCount || '📍'}
-            </span>
-          </div>
-          
-          <!-- Ponta do pin -->
-          <div style="
-            position: absolute;
-            bottom: 0;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 0;
-            height: 0;
-            border-left: 10px solid transparent;
-            border-right: 10px solid transparent;
-            border-top: 20px solid #dc2626;
-            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
-          "></div>
-          
-          <!-- Label -->
-          <div class="marker-label" style="
-            position: absolute;
-            top: 75px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.85);
-            color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 600;
-            white-space: nowrap;
-            pointer-events: none;
-            z-index: 10;
-            max-width: 150px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-          ">
-            ${markerData.name}
-          </div>
-          
-          <!-- Tooltip -->
-          <div class="marker-tooltip" style="
-            position: absolute;
-            bottom: 80px;
-            left: 50%;
-            transform: translateX(-50%) scale(0);
-            opacity: 0;
-            background: linear-gradient(135deg, rgba(31, 41, 55, 0.98), rgba(17, 24, 39, 0.98));
-            color: white;
-            padding: 16px;
-            border-radius: 12px;
-            white-space: nowrap;
-            font-size: 14px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
-            backdrop-filter: blur(12px);
-            z-index: 1000;
-            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-            pointer-events: none;
-            min-width: 280px;
-          ">
-            <div style="font-weight: bold; font-size: 16px; color: #fbbf24; margin-bottom: 8px;">
-              ${markerData.name}
-            </div>
-            <div style="font-size: 13px; color: #e5e7eb; margin-bottom: 4px;">
-              📍 ${markerData.location || 'Local desconhecido'}
-            </div>
-            <div style="font-size: 13px; color: #e5e7eb; margin-bottom: 4px;">
-              📸 ${markerData.imageCount} ${
-      markerData.imageCount === 1 ? 'foto' : 'fotos'
-    }
-            </div>
-            ${
-              markerData.date
-                ? `
-            <div style="font-size: 13px; color: #e5e7eb; margin-bottom: 8px;">
-              📅 ${new Date(markerData.date).toLocaleDateString('pt-BR')}
-            </div>
-            `
-                : ''
-            }
-            <div style="font-size: 13px; color: #86efac; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
-              Clique para ver o álbum
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-    // ⭐⭐⭐ CORREÇÃO CRÍTICA: Aplicar animações apenas no elemento INTERNO, não no raiz!
-    const innerElement = el.querySelector('.marker-inner');
-    const tooltip = el.querySelector('.marker-tooltip');
-    const markerPin = el.querySelector('.marker-pin');
-
-    // Cursor pointer no elemento raiz
-    el.style.cursor = 'pointer';
-
-    // ⭐ EVENTOS DE HOVER - Aplicar apenas no elemento interno!
-    el.addEventListener('mouseenter', () => {
-      setHoveredMarkerId(markerData.id || markerData.travelId);
-
-      // ⭐ IMPORTANTE: Scale apenas no elemento interno, NÃO no el!
-      if (innerElement) {
-        innerElement.style.transform = 'scale(1.1)';
-      }
-
-      // Elevar z-index (isso é seguro)
-      el.style.zIndex = '10000';
-
-      // Mostrar tooltip
-      if (tooltip) {
-        tooltip.style.transform = 'translateX(-50%) scale(1)';
-        tooltip.style.opacity = '1';
-      }
-
-      // Destacar o pin
-      if (markerPin) {
-        markerPin.style.background =
-          'linear-gradient(135deg, #f97316, #ef4444)';
-        markerPin.style.boxShadow = '0 8px 20px rgba(239, 68, 68, 0.6)';
-      }
-    });
-
-    el.addEventListener('mouseleave', () => {
-      setHoveredMarkerId(null);
-
-      // ⭐ Resetar scale do elemento interno
-      if (innerElement) {
-        innerElement.style.transform = 'scale(1)';
-      }
-
-      // Resetar z-index
-      el.style.zIndex = '1';
-
-      // Esconder tooltip
-      if (tooltip) {
-        tooltip.style.transform = 'translateX(-50%) scale(0)';
-        tooltip.style.opacity = '0';
-      }
-
-      // Restaurar o pin
-      if (markerPin) {
-        markerPin.style.background =
-          'linear-gradient(135deg, #ef4444, #dc2626)';
-        markerPin.style.boxShadow = '0 8px 20px rgba(0,0,0,0.5)';
-      }
-    });
-
-    // ⭐ CLICK EVENT
-    el.addEventListener('click', e => {
-      e.stopPropagation();
-      console.log('🎯 Marker clicado:', markerData.name);
-
-      if (onMarkerClick) {
-        onMarkerClick(markerData);
-      }
-    });
-
-    // ⭐ TOUCH EVENTS PARA MOBILE (sem transform no elemento raiz)
-    let touchTimer;
-    el.addEventListener('touchstart', e => {
-      touchTimer = setTimeout(() => {
-        if (tooltip) {
-          tooltip.style.transform = 'translateX(-50%) scale(1)';
-          tooltip.style.opacity = '1';
-        }
-      }, 500);
-    });
-
-    el.addEventListener('touchend', () => {
-      clearTimeout(touchTimer);
-      setTimeout(() => {
-        if (tooltip) {
-          tooltip.style.transform = 'translateX(-50%) scale(0)';
-          tooltip.style.opacity = '0';
-        }
-      }, 3000);
-    });
-
-    return el;
-  };
-
-  // ⭐⭐⭐ ALTERNATIVA MAIS SIMPLES - Se a versão acima ainda tiver problemas
-  const createSimpleMarkerElement = (markerData, index) => {
-    const el = document.createElement('div');
-
-    // Container wrapper que não será afetado por transforms
-    el.innerHTML = `
-      <div style="
-        width: 50px; 
-        height: 70px; 
-        position: relative;
-        margin-left: -25px;
-        margin-top: -70px;
-        pointer-events: none;
-      ">
-        <!-- Pin SVG sem animações de transform -->
-        <svg width="50" height="70" viewBox="0 0 50 70" style="
-          position: absolute;
-          top: 0;
-          left: 0;
-          pointer-events: all;
-          cursor: pointer;
-          filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
-        ">
-          <!-- Pin shape -->
-          <path d="M25 0 C11.2 0 0 11.2 0 25 C0 45 25 70 25 70 S50 45 50 25 C50 11.2 38.8 0 25 0 Z" 
-                fill="#ef4444" 
-                stroke="white" 
-                stroke-width="2"
-                class="pin-path"/>
-          <!-- Inner circle -->
-          <circle cx="25" cy="25" r="12" fill="white"/>
-          <!-- Number -->
-          <text x="25" y="30" text-anchor="middle" font-family="Arial, sans-serif" 
-                font-size="14" font-weight="bold" fill="#ef4444">
-            ${markerData.imageCount || ''}
-          </text>
-        </svg>
-        
-        <!-- Label below pin -->
-        <div style="
-          position: absolute;
-          top: 75px;
-          left: 50%;
-          transform: translateX(-50%);
-          background: rgba(0,0,0,0.85);
-          color: white;
-          padding: 4px 8px;
-          border-radius: 4px;
-          font-size: 11px;
-          white-space: nowrap;
-          pointer-events: none;
-          opacity: 0;
-          transition: opacity 0.3s;
-        " class="marker-label">
-          ${markerData.name}
-        </div>
-      </div>
-    `;
-
-    const svg = el.querySelector('svg');
-    const label = el.querySelector('.marker-label');
-    const pinPath = el.querySelector('.pin-path');
-
-    // Estilos CSS para hover (sem transform!)
-    svg.addEventListener('mouseenter', () => {
-      pinPath.setAttribute('fill', '#f97316'); // Mudar cor ao invés de scale
-      label.style.opacity = '1'; // Mostrar label
-      setHoveredMarkerId(markerData.id || markerData.travelId);
-    });
-
-    svg.addEventListener('mouseleave', () => {
-      pinPath.setAttribute('fill', '#ef4444'); // Cor original
-      label.style.opacity = '0'; // Esconder label
-      setHoveredMarkerId(null);
-    });
-
-    svg.addEventListener('click', e => {
-      e.stopPropagation();
-      if (onMarkerClick) {
-        onMarkerClick(markerData);
-      }
-    });
-
-    return el;
-  };
-
   // ⭐ INICIALIZAÇÃO DO MAPA
   useEffect(() => {
     if (map.current) return;
 
-    // Adicionar estilos CSS customizados
-    addCustomStyles();
-
-    console.log('🗺️ Inicializando mapa 3D interativo...');
+    console.log(`🗺️ Inicializando mapa para ${deviceType}...`);
 
     if (!MAPBOX_TOKEN || !MAPBOX_TOKEN.startsWith('pk.')) {
       setMapError(
@@ -450,32 +248,62 @@ const MapboxTravelMap = ({
         container: mapContainer.current,
         style: mapStyle,
         center: [0, 20],
-        zoom: 2,
-        pitch: is3D ? 45 : 0,
+        zoom: deviceType === 'mobile' ? 1 : 2,
+        pitch: 0, // Iniciar plano
         bearing: 0,
         antialias: true,
-        projection: 'globe',
+        projection: deviceType === 'mobile' ? 'mercator' : 'globe', // Mercator é mais leve para mobile
+        touchZoomRotate: deviceType === 'mobile', // Habilitar gestos touch no mobile
+        dragRotate: deviceType !== 'mobile', // Desabilitar rotação com drag no mobile
       });
 
-      map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-      map.current.addControl(new mapboxgl.FullscreenControl(), 'top-right');
+      // Adicionar controles
+      map.current.addControl(
+        new mapboxgl.NavigationControl({
+          showCompass: deviceType !== 'mobile',
+          showZoom: true,
+        }),
+        'top-right'
+      );
+
+      if (deviceType !== 'mobile') {
+        map.current.addControl(new mapboxgl.FullscreenControl(), 'top-right');
+      }
+
       map.current.addControl(new mapboxgl.ScaleControl(), 'bottom-left');
+
+      // ⭐ ADICIONAR CONTROLE DE LOCALIZAÇÃO NO MOBILE
+      if (deviceType === 'mobile') {
+        map.current.addControl(
+          new mapboxgl.GeolocateControl({
+            positionOptions: {
+              enableHighAccuracy: true,
+            },
+            trackUserLocation: false,
+            showUserHeading: false,
+          }),
+          'top-right'
+        );
+      }
 
       map.current.on('style.load', () => {
         console.log('✅ Mapa carregado com sucesso');
         setMapLoaded(true);
         setMapError(null);
 
-        try {
-          map.current.setFog({
-            color: 'rgb(186, 210, 235)',
-            'high-color': 'rgb(36, 92, 223)',
-            'horizon-blend': 0.02,
-            'space-color': 'rgb(11, 11, 25)',
-            'star-intensity': 0.6,
-          });
-        } catch (fogError) {
-          console.warn('⚠️ Erro ao configurar atmosfera:', fogError);
+        // Configurar atmosfera apenas para desktop
+        if (deviceType !== 'mobile') {
+          try {
+            map.current.setFog({
+              color: 'rgb(186, 210, 235)',
+              'high-color': 'rgb(36, 92, 223)',
+              'horizon-blend': 0.02,
+              'space-color': 'rgb(11, 11, 25)',
+              'star-intensity': 0.6,
+            });
+          } catch (fogError) {
+            console.warn('⚠️ Erro ao configurar atmosfera:', fogError);
+          }
         }
       });
 
@@ -494,7 +322,7 @@ const MapboxTravelMap = ({
         map.current = null;
       }
     };
-  }, []);
+  }, [deviceType]);
 
   // ⭐ ATUALIZAR ESTILO DO MAPA
   useEffect(() => {
@@ -507,18 +335,17 @@ const MapboxTravelMap = ({
   useEffect(() => {
     if (map.current && mapLoaded) {
       map.current.easeTo({
-        pitch: is3D ? 45 : 0,
+        pitch: is3D && deviceType !== 'mobile' ? 45 : 0,
         duration: 1000,
       });
     }
-  }, [is3D, mapLoaded]);
+  }, [is3D, mapLoaded, deviceType]);
 
-  // ⭐⭐⭐ ATUALIZAR MARKERS - VERSÃO CORRIGIDA COM NOVO createMarkerElement
+  // ⭐ ADICIONAR MARKERS
   useEffect(() => {
     if (!map.current || !mapLoaded || !markers) return;
 
-    console.log('📍 Atualizando markers no mapa...');
-    setMarkersLoaded(false);
+    console.log(`📍 Atualizando markers no mapa (${deviceType})...`);
 
     // Remover markers antigos
     Object.values(markersRefs.current).forEach(marker => {
@@ -528,7 +355,18 @@ const MapboxTravelMap = ({
         console.warn('⚠️ Erro ao remover marker:', error);
       }
     });
+
+    // Remover popups antigos
+    Object.values(popupsRefs.current).forEach(popup => {
+      try {
+        popup.remove();
+      } catch (error) {
+        console.warn('⚠️ Erro ao remover popup:', error);
+      }
+    });
+
     markersRefs.current = {};
+    popupsRefs.current = {};
 
     // Filtrar markers válidos
     const validMarkers = markers.filter(marker => {
@@ -545,89 +383,182 @@ const MapboxTravelMap = ({
 
     if (validMarkers.length === 0) {
       console.warn('⚠️ Nenhum marker válido para exibir');
-      setMarkersLoaded(true);
       return;
     }
 
     console.log('✅ Markers válidos para exibir:', validMarkers.length);
 
-    // ⭐⭐⭐ ADICIONAR NOVOS MARKERS COM CONFIGURAÇÃO CORRIGIDA
+    // Adicionar novos markers
     validMarkers.forEach((markerData, index) => {
       try {
-        // IMPORTANTE: Converter coordenadas [lat, lng] para [lng, lat] para Mapbox
+        // Converter coordenadas [lat, lng] para [lng, lat] para Mapbox
         const lngLat = [markerData.coordinates[1], markerData.coordinates[0]];
 
-        console.log(`📍 Adicionando marker ${markerData.name} em:`, lngLat);
+        // Criar elemento do marker baseado no dispositivo
+        const el =
+          deviceType === 'mobile'
+            ? createMobileMarker(markerData)
+            : createDesktopMarker(markerData);
 
-        // Criar elemento do marker (usar a versão completa ou simples conforme necessário)
-        const el = createMarkerElement(markerData, index);
-        // Alternativa: const el = createSimpleMarkerElement(markerData, index);
+        // ⭐ ADICIONAR EVENTO DE CLIQUE
+        el.addEventListener('click', e => {
+          e.stopPropagation();
+          console.log(`🎯 Marker clicado (${deviceType}):`, markerData.name);
 
-        // ⭐⭐⭐ CONFIGURAÇÃO CORRIGIDA DO MARKER
+          if (onMarkerClick) {
+            onMarkerClick(markerData);
+          }
+        });
+
+        // ⭐ ADICIONAR EVENTOS TOUCH PARA MOBILE
+        if (deviceType === 'mobile') {
+          let touchStartTime;
+
+          el.addEventListener(
+            'touchstart',
+            e => {
+              touchStartTime = Date.now();
+              e.stopPropagation();
+            },
+            { passive: true }
+          );
+
+          el.addEventListener(
+            'touchend',
+            e => {
+              const touchDuration = Date.now() - touchStartTime;
+
+              // Se foi um toque rápido (não um drag)
+              if (touchDuration < 300) {
+                e.stopPropagation();
+                e.preventDefault();
+
+                // Mostrar popup no mobile
+                if (popupsRefs.current[markerData.id]) {
+                  const popup = popupsRefs.current[markerData.id];
+                  const isOpen = popup.isOpen();
+
+                  // Fechar todos os outros popups
+                  Object.values(popupsRefs.current).forEach(p => {
+                    if (p !== popup) p.remove();
+                  });
+
+                  // Toggle do popup atual
+                  if (!isOpen) {
+                    popup.addTo(map.current);
+                  }
+                }
+              }
+            },
+            { passive: false }
+          );
+        }
+
+        // Criar marker
         const marker = new mapboxgl.Marker({
           element: el,
-          anchor: 'bottom', // Base do pin na coordenada
-          offset: [0, 0], // Sem offset adicional
+          anchor: 'bottom',
+          offset: [0, 0],
         })
           .setLngLat(lngLat)
           .addTo(map.current);
 
-        // Adicionar popup simples
-        const popup = new mapboxgl.Popup({
-          offset: [0, -50],
-          closeButton: true,
-          closeOnClick: false,
-        }).setHTML(`
-          <div style="padding: 10px;">
-            <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: bold;">
-              ${markerData.name}
-            </h3>
-            <p style="margin: 0 0 4px 0; font-size: 13px; color: #666;">
-              📍 ${markerData.location || 'Local desconhecido'}
-            </p>
-            <p style="margin: 0 0 8px 0; font-size: 13px; color: #666;">
-              📸 ${markerData.imageCount} ${
-          markerData.imageCount === 1 ? 'foto' : 'fotos'
-        }
-            </p>
-            ${
-              markerData.date
-                ? `
-              <p style="margin: 0 0 8px 0; font-size: 13px; color: #666;">
-                📅 ${new Date(markerData.date).toLocaleDateString('pt-BR')}
+        // ⭐ CRIAR POPUP OTIMIZADO PARA MOBILE
+        const popupContent =
+          deviceType === 'mobile'
+            ? `
+            <div style="padding: 10px; min-width: 200px;">
+              <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: bold;">
+                ${markerData.name}
+              </h3>
+              <p style="margin: 0 0 4px 0; font-size: 12px; color: #666;">
+                📍 ${markerData.location?.split(',')[0] || 'Local'}
               </p>
-            `
-                : ''
-            }
-            <button 
-              onclick="window.openTravelAlbum && window.openTravelAlbum('${
-                markerData.id || markerData.travelId
-              }')"
-              style="
-                width: 100%;
-                padding: 8px;
-                background: #3b82f6;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                font-weight: bold;
-              ">
-              Ver Álbum
-            </button>
-          </div>
-        `);
+              <p style="margin: 0 0 8px 0; font-size: 12px; color: #666;">
+                📸 ${markerData.imageCount} fotos
+              </p>
+              <button 
+                onclick="window.openTravelAlbumMobile && window.openTravelAlbumMobile('${
+                  markerData.id || markerData.travelId
+                }')"
+                style="
+                  width: 100%;
+                  padding: 10px;
+                  background: #3b82f6;
+                  color: white;
+                  border: none;
+                  border-radius: 6px;
+                  font-size: 14px;
+                  font-weight: bold;
+                  -webkit-tap-highlight-color: transparent;
+                ">
+                Ver Álbum
+              </button>
+            </div>
+          `
+            : `
+            <div style="padding: 10px;">
+              <h3 style="margin: 0 0 8px 0; font-size: 16px; font-weight: bold;">
+                ${markerData.name}
+              </h3>
+              <p style="margin: 0 0 4px 0; font-size: 13px; color: #666;">
+                📍 ${markerData.location || 'Local desconhecido'}
+              </p>
+              <p style="margin: 0 0 8px 0; font-size: 13px; color: #666;">
+                📸 ${markerData.imageCount} ${
+                markerData.imageCount === 1 ? 'foto' : 'fotos'
+              }
+              </p>
+              ${
+                markerData.date
+                  ? `
+                <p style="margin: 0 0 8px 0; font-size: 13px; color: #666;">
+                  📅 ${new Date(markerData.date).toLocaleDateString('pt-BR')}
+                </p>
+              `
+                  : ''
+              }
+              <button 
+                onclick="window.openTravelAlbum && window.openTravelAlbum('${
+                  markerData.id || markerData.travelId
+                }')"
+                style="
+                  width: 100%;
+                  padding: 8px;
+                  background: #3b82f6;
+                  color: white;
+                  border: none;
+                  border-radius: 4px;
+                  cursor: pointer;
+                  font-weight: bold;
+                ">
+                Ver Álbum
+              </button>
+            </div>
+          `;
 
-        // Registrar handler global para o botão do popup
-        window.openTravelAlbum = travelId => {
+        const popup = new mapboxgl.Popup({
+          offset: deviceType === 'mobile' ? [0, -40] : [0, -50],
+          closeButton: true,
+          closeOnClick: deviceType !== 'mobile',
+          maxWidth: deviceType === 'mobile' ? '250px' : '300px',
+        }).setHTML(popupContent);
+
+        // Registrar handlers globais
+        window.openTravelAlbum = window.openTravelAlbumMobile = travelId => {
           const travel = markers.find(m => (m.id || m.travelId) === travelId);
           if (travel && onMarkerClick) {
             onMarkerClick(travel);
           }
         };
 
-        marker.setPopup(popup);
+        // No desktop, adicionar popup ao marker
+        if (deviceType !== 'mobile') {
+          marker.setPopup(popup);
+        }
+
         markersRefs.current[markerData.id || markerData.travelId] = marker;
+        popupsRefs.current[markerData.id || markerData.travelId] = popup;
       } catch (markerError) {
         console.error('❌ Erro ao criar marker:', markerError, markerData);
       }
@@ -642,8 +573,8 @@ const MapboxTravelMap = ({
             const lngLat = [marker.coordinates[1], marker.coordinates[0]];
             map.current.flyTo({
               center: lngLat,
-              zoom: 6,
-              pitch: 45,
+              zoom: deviceType === 'mobile' ? 5 : 6,
+              pitch: deviceType === 'mobile' ? 0 : is3D ? 45 : 0,
               duration: 2000,
             });
           } else {
@@ -651,9 +582,13 @@ const MapboxTravelMap = ({
             validMarkers.forEach(marker => {
               bounds.extend([marker.coordinates[1], marker.coordinates[0]]);
             });
+
             map.current.fitBounds(bounds, {
-              padding: { top: 100, bottom: 100, left: 100, right: 100 },
-              maxZoom: 8,
+              padding:
+                deviceType === 'mobile'
+                  ? { top: 50, bottom: 50, left: 20, right: 20 }
+                  : { top: 100, bottom: 100, left: 100, right: 100 },
+              maxZoom: deviceType === 'mobile' ? 6 : 8,
               duration: 2000,
             });
           }
@@ -662,9 +597,7 @@ const MapboxTravelMap = ({
         }
       }, 1500);
     }
-
-    setMarkersLoaded(true);
-  }, [markers, onMarkerClick, mapLoaded]);
+  }, [markers, onMarkerClick, mapLoaded, deviceType, is3D]);
 
   // ⭐ DESTACAR MARKER SELECIONADO
   useEffect(() => {
@@ -677,13 +610,18 @@ const MapboxTravelMap = ({
     if (markerData && markerData.coordinates) {
       map.current.flyTo({
         center: [markerData.coordinates[1], markerData.coordinates[0]],
-        zoom: 10,
-        pitch: 60,
-        bearing: 30,
+        zoom: deviceType === 'mobile' ? 8 : 10,
+        pitch: deviceType === 'mobile' ? 0 : is3D ? 60 : 0,
+        bearing: deviceType === 'mobile' ? 0 : 30,
         duration: 2000,
       });
+
+      // Abrir popup do marker selecionado
+      if (popupsRefs.current[selectedTravelId]) {
+        popupsRefs.current[selectedTravelId].addTo(map.current);
+      }
     }
-  }, [selectedTravelId, markers]);
+  }, [selectedTravelId, markers, deviceType, is3D]);
 
   // ⭐ RENDER
   if (mapError) {
@@ -707,6 +645,7 @@ const MapboxTravelMap = ({
     <div className='relative w-full h-full'>
       {/* CONTROLES */}
       <div className='absolute top-4 left-4 z-10 space-y-2'>
+        {/* Seletor de estilo */}
         <div className='bg-white rounded-lg shadow-lg p-2'>
           <select
             value={mapStyle.split('/').pop()}
@@ -724,45 +663,55 @@ const MapboxTravelMap = ({
           </select>
         </div>
 
-        <button
-          onClick={() => setIs3D(!is3D)}
-          disabled={!mapLoaded}
-          className={`w-10 h-10 rounded-lg shadow-lg flex items-center justify-center transition-all ${
-            is3D
-              ? 'bg-blue-600 text-white'
-              : 'bg-white text-gray-600 hover:bg-gray-50'
-          } ${!mapLoaded ? 'opacity-50 cursor-not-allowed' : ''}`}
-          title={is3D ? 'Desativar 3D' : 'Ativar 3D'}
-        >
-          <Compass
-            className={`h-4 w-4 transition-transform ${
-              is3D ? 'rotate-45' : ''
-            }`}
-          />
-        </button>
+        {/* Toggle 3D (apenas desktop) */}
+        {deviceType !== 'mobile' && (
+          <button
+            onClick={() => setIs3D(!is3D)}
+            disabled={!mapLoaded}
+            className={`w-10 h-10 rounded-lg shadow-lg flex items-center justify-center transition-all ${
+              is3D
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            } ${!mapLoaded ? 'opacity-50 cursor-not-allowed' : ''}`}
+            title={is3D ? 'Desativar 3D' : 'Ativar 3D'}
+          >
+            <Compass
+              className={`h-4 w-4 transition-transform ${
+                is3D ? 'rotate-45' : ''
+              }`}
+            />
+          </button>
+        )}
       </div>
 
-      {/* CONTADOR */}
-      {markers.length > 0 && (
-        <div className='absolute top-4 right-4 z-10'>
+      {/* INDICADOR DE DISPOSITIVO E CONTADOR */}
+      <div className='absolute top-4 right-4 z-10 space-y-2'>
+        {/* Indicador de dispositivo */}
+        <div className='bg-white rounded-lg shadow-lg px-3 py-2 flex items-center space-x-2'>
+          {deviceType === 'mobile' ? (
+            <>
+              <Smartphone className='h-4 w-4 text-blue-600' />
+              <span className='text-xs font-medium'>Mobile</span>
+            </>
+          ) : (
+            <>
+              <Monitor className='h-4 w-4 text-gray-600' />
+              <span className='text-xs font-medium'>Desktop</span>
+            </>
+          )}
+        </div>
+
+        {/* Contador de lugares */}
+        {markers.length > 0 && (
           <div className='bg-white rounded-lg shadow-lg px-4 py-2 flex items-center space-x-3'>
             <MapPin className='h-4 w-4 text-red-600' />
             <span className='text-sm font-medium'>
               {markers.filter(m => isValidCoordinate(m.coordinates)).length}{' '}
-              lugares no mapa
+              lugares
             </span>
-            {hoveredMarkerId && (
-              <span className='text-xs text-gray-500'>
-                •{' '}
-                {
-                  markers.find(m => (m.id || m.travelId) === hoveredMarkerId)
-                    ?.name
-                }
-              </span>
-            )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* LOADING */}
       {(loading || !mapLoaded) && (
@@ -770,9 +719,13 @@ const MapboxTravelMap = ({
           <div className='text-center'>
             <Globe className='h-12 w-12 text-blue-600 animate-pulse mx-auto mb-3' />
             <p className='text-sm font-medium text-gray-700'>
-              {loading ? 'Carregando viagens...' : 'Inicializando mapa 3D...'}
+              {loading ? 'Carregando viagens...' : 'Inicializando mapa...'}
             </p>
-            <p className='text-xs text-gray-500 mt-2'>Powered by Mapbox</p>
+            {deviceType === 'mobile' && (
+              <p className='text-xs text-gray-500 mt-2'>
+                Otimizado para mobile
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -782,6 +735,15 @@ const MapboxTravelMap = ({
         ref={mapContainer}
         className='w-full h-full rounded-lg overflow-hidden'
       />
+
+      {/* DICA MOBILE */}
+      {deviceType === 'mobile' && markers.length > 0 && (
+        <div className='absolute bottom-4 left-4 right-4 z-10'>
+          <div className='bg-black bg-opacity-75 text-white text-xs px-3 py-2 rounded-lg text-center'>
+            Toque nos marcadores para ver detalhes
+          </div>
+        </div>
+      )}
     </div>
   );
 };

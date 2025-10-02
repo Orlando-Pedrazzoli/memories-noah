@@ -32,11 +32,8 @@ const Navbar = () => {
         <div className='flex justify-between items-center h-16'>
           {/* Logo */}
           <Link to='/' className='flex items-center space-x-3'>
-            <div className='bg-primary-600 p-2 rounded-lg'>
-              <Baby className='h-6 w-6 text-white' />
-            </div>
             <span className='text-xl font-bold text-gray-900'>
-              Memórias do Nosso Filho
+              Memórias de Família
             </span>
           </Link>
 

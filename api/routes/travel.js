@@ -31,24 +31,33 @@ const ensureDataDir = async () => {
   }
 };
 
-// ⭐ FUNÇÃO PARA SALVAR MARKERS EM ARQUIVO
+// ⭐ FUNÇÃO MELHORADA PARA SALVAR MARKERS EM ARQUIVO
 const saveMarkersToStorage = async markers => {
   try {
     await ensureDataDir();
+
+    // ⭐ IMPORTANTE: Se não há markers, limpar o arquivo
+    if (!markers || markers.length === 0) {
+      console.log('🧹 Limpando arquivo de markers (nenhum marker restante)');
+      await fs.writeFile(MARKERS_FILE, JSON.stringify([], null, 2), 'utf8');
+      travelMarkersCache = [];
+      return true;
+    }
+
     await fs.writeFile(MARKERS_FILE, JSON.stringify(markers, null, 2), 'utf8');
     travelMarkersCache = markers;
     console.log('💾 Markers salvos em arquivo:', markers.length);
     return true;
   } catch (error) {
     console.error('❌ Erro ao salvar markers:', error);
-    travelMarkersCache = markers;
     return false;
   }
 };
 
-// ⭐ FUNÇÃO PARA CARREGAR MARKERS DE ARQUIVO
-const loadMarkersFromStorage = async () => {
-  if (cacheLoaded && travelMarkersCache !== null) {
+// ⭐ FUNÇÃO MELHORADA PARA CARREGAR MARKERS DE ARQUIVO
+const loadMarkersFromStorage = async (forceReload = false) => {
+  // ⭐ Forçar recarga se solicitado
+  if (!forceReload && cacheLoaded && travelMarkersCache !== null) {
     return travelMarkersCache;
   }
 
@@ -58,14 +67,17 @@ const loadMarkersFromStorage = async () => {
     try {
       await fs.access(MARKERS_FILE);
       const data = await fs.readFile(MARKERS_FILE, 'utf8');
-      const markers = JSON.parse(data);
-      travelMarkersCache = markers;
+      const markers = JSON.parse(data) || [];
+
+      // ⭐ VALIDAÇÃO: Filtrar markers inválidos
+      const validMarkers = markers.filter(m => m && m.travelId && m.name);
+
+      travelMarkersCache = validMarkers;
       cacheLoaded = true;
-      console.log('📂 Markers carregados do arquivo:', markers.length);
-      return markers;
+      console.log('📂 Markers carregados do arquivo:', validMarkers.length);
+      return validMarkers;
     } catch {
-      console.log('📝 Arquivo de markers não existe, criando...');
-      await saveMarkersToStorage([]);
+      console.log('📝 Arquivo de markers não existe ou está vazio');
       travelMarkersCache = [];
       cacheLoaded = true;
       return [];
@@ -78,13 +90,46 @@ const loadMarkersFromStorage = async () => {
   }
 };
 
-// ⭐ INICIALIZAR MARKERS AO INICIAR
+// ⭐ FUNÇÃO PARA SINCRONIZAR MARKERS COM ÁLBUNS EXISTENTES
+const syncMarkersWithAlbums = async () => {
+  try {
+    console.log('🔄 Sincronizando markers com álbuns existentes...');
+
+    // Obter lista de álbuns do Cloudinary
+    const foldersResult = await cloudinary.api.sub_folders('travels');
+    const existingAlbumIds = foldersResult.folders.map(f => f.name);
+
+    // Carregar markers atuais
+    const markers = await loadMarkersFromStorage(true); // Forçar recarga
+
+    // Filtrar apenas markers que têm álbuns correspondentes
+    const syncedMarkers = markers.filter(marker =>
+      existingAlbumIds.includes(marker.travelId)
+    );
+
+    // Se houve mudanças, salvar
+    if (syncedMarkers.length !== markers.length) {
+      console.log(
+        `🧹 Removendo ${markers.length - syncedMarkers.length} markers órfãos`
+      );
+      await saveMarkersToStorage(syncedMarkers);
+    }
+
+    return syncedMarkers;
+  } catch (error) {
+    console.error('❌ Erro ao sincronizar markers:', error);
+    return [];
+  }
+};
+
+// ⭐ INICIALIZAR E SINCRONIZAR MARKERS AO INICIAR
 (async () => {
+  await syncMarkersWithAlbums();
   const markers = await loadMarkersFromStorage();
   console.log(
     '🚀 Sistema de markers inicializado com',
     markers.length,
-    'markers'
+    'markers sincronizados'
   );
 })();
 
@@ -99,122 +144,34 @@ const forceDeleteEmptyFolder = async folderPath => {
       `⚠️ Não foi possível deletar pasta ${folderPath}:`,
       error.message
     );
-
-    try {
-      const subfolders = await cloudinary.api.sub_folders(folderPath);
-      if (subfolders.folders.length === 0) {
-        await cloudinary.api.delete_folder(folderPath, { type: 'upload' });
-        console.log(
-          `📁 Pasta vazia ${folderPath} deletada (método alternativo)`
-        );
-        return true;
-      }
-    } catch (altError) {
-      console.warn(`⚠️ Método alternativo também falhou:`, altError.message);
-    }
-
     return false;
   }
 };
 
-// ⭐ ENDPOINTS ESPECÍFICOS PRIMEIRO (antes dos genéricos com :travelId)
-
 // Get travel markers for map
 router.get('/map/markers', authenticateToken, async (req, res) => {
   try {
-    const markers = await loadMarkersFromStorage();
-    console.log('🗺️ Retornando markers para o mapa:', markers.length);
+    // ⭐ SEMPRE SINCRONIZAR ANTES DE RETORNAR MARKERS
+    const syncedMarkers = await syncMarkersWithAlbums();
+
+    console.log(
+      '🗺️ Retornando markers sincronizados para o mapa:',
+      syncedMarkers.length
+    );
 
     res.json({
       success: true,
-      markers: markers,
-      count: markers.length,
+      markers: syncedMarkers,
+      count: syncedMarkers.length,
       timestamp: new Date().toISOString(),
+      synced: true, // Indicar que foi sincronizado
     });
   } catch (error) {
     console.error('❌ Get markers error:', error);
-    res.status(500).json({ error: 'Failed to fetch travel markers' });
-  }
-});
-
-// ⭐ Debug - Listar todos os markers (apenas desenvolvimento)
-router.get('/debug/markers', authenticateToken, async (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(404).json({ error: 'Not found' });
-  }
-
-  const markers = await loadMarkersFromStorage();
-  res.json({
-    success: true,
-    markers: markers,
-    count: markers.length,
-  });
-});
-
-// ⭐ Geocodificar localização (endpoint auxiliar)
-router.post('/geocode', authenticateToken, async (req, res) => {
-  try {
-    const { location } = req.body;
-
-    if (!location) {
-      return res.status(400).json({ error: 'Location is required' });
-    }
-
-    console.log('🌍 Geocodificando:', location);
-
-    try {
-      const geoResponse = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          location
-        )}&limit=1&addressdetails=1&accept-language=pt-BR,pt,en`,
-        {
-          headers: {
-            'User-Agent': 'MemoryApp/1.0',
-          },
-        }
-      );
-
-      if (geoResponse.ok) {
-        const geoData = await geoResponse.json();
-
-        if (geoData && geoData.length > 0) {
-          const result = geoData[0];
-
-          res.json({
-            success: true,
-            result: {
-              latitude: parseFloat(result.lat),
-              longitude: parseFloat(result.lon),
-              formattedAddress: result.display_name,
-              city:
-                result.address?.city ||
-                result.address?.town ||
-                result.address?.village,
-              country: result.address?.country,
-              countryCode: result.address?.country_code,
-            },
-          });
-        } else {
-          res.status(404).json({
-            error: 'Location not found',
-            location,
-          });
-        }
-      } else {
-        throw new Error(`HTTP ${geoResponse.status}`);
-      }
-    } catch (geoError) {
-      console.error('Geocoding error:', geoError);
-      res.status(500).json({
-        error: 'Geocoding failed',
-        details: geoError.message,
-      });
-    }
-  } catch (error) {
-    console.error('Geocode error:', error);
     res.status(500).json({
-      error: 'Geocoding failed',
-      details: error.message,
+      error: 'Failed to fetch travel markers',
+      markers: [], // Retornar array vazio em caso de erro
+      count: 0,
     });
   }
 });
@@ -232,7 +189,6 @@ router.post('/markers', authenticateToken, async (req, res) => {
 
     let coordinates = null;
 
-    // ⭐ GEOCODING MELHORADO
     if (location) {
       try {
         console.log('🌍 Tentando geocodificar:', location);
@@ -257,19 +213,15 @@ router.post('/markers', authenticateToken, async (req, res) => {
               parseFloat(geoData[0].lon),
             ];
             console.log('✅ Geocoding successful:', coordinates);
-          } else {
-            console.log('⚠️ No geocoding results for:', location);
           }
-        } else {
-          console.warn('⚠️ Geocoding API response not OK:', geoResponse.status);
         }
       } catch (geoError) {
         console.error('⚠️ Geocoding failed:', geoError.message);
       }
     }
 
-    // Carregar markers existentes
-    const markers = await loadMarkersFromStorage();
+    // Carregar markers existentes com recarga forçada
+    const markers = await loadMarkersFromStorage(true);
 
     // Criar novo marker
     const newMarker = {
@@ -299,7 +251,7 @@ router.post('/markers', authenticateToken, async (req, res) => {
       console.log('➕ Added new marker:', travelId);
     }
 
-    // ⭐ SALVAR EM ARQUIVO
+    // Salvar em arquivo
     await saveMarkersToStorage(markers);
 
     res.json({
@@ -318,155 +270,213 @@ router.post('/markers', authenticateToken, async (req, res) => {
   }
 });
 
-// ⭐ ATUALIZAR contagem de imagens do marker
-router.put('/markers/:travelId/count', authenticateToken, async (req, res) => {
-  try {
-    const { travelId } = req.params;
-    const { imageCount } = req.body;
-
-    console.log('📊 Updating image count for:', travelId, 'to:', imageCount);
-
-    const markers = await loadMarkersFromStorage();
-    const markerIndex = markers.findIndex(m => m.travelId === travelId);
-
-    if (markerIndex >= 0) {
-      markers[markerIndex].imageCount = imageCount;
-      markers[markerIndex].updatedAt = new Date().toISOString();
-
-      // ⭐ SALVAR ALTERAÇÕES
-      await saveMarkersToStorage(markers);
-
-      console.log('✅ Updated image count successfully');
-
-      res.json({
-        success: true,
-        marker: markers[markerIndex],
-        message: 'Image count updated',
-      });
-    } else {
-      console.log('⚠️ Marker not found for:', travelId);
-      res.status(404).json({
-        success: false,
-        error: 'Marker not found',
-      });
-    }
-  } catch (error) {
-    console.error('❌ Update marker count error:', error);
-    res.status(500).json({ error: 'Failed to update marker count' });
-  }
-});
-
-// ⭐ DELETAR apenas o marker (sem imagens)
-router.delete('/markers/:travelId', authenticateToken, async (req, res) => {
+// ⭐ DELETAR álbum completo (VERSÃO CORRIGIDA)
+router.delete('/:travelId', authenticateToken, async (req, res) => {
   try {
     const { travelId } = req.params;
 
-    console.log('🗑️ Deleting marker for:', travelId);
+    console.log('🗑️ Iniciando exclusão COMPLETA do álbum:', travelId);
 
-    const markers = await loadMarkersFromStorage();
-    const markerIndex = markers.findIndex(m => m.travelId === travelId);
-
-    if (markerIndex >= 0) {
-      const removedMarker = markers.splice(markerIndex, 1)[0];
-
-      // ⭐ SALVAR ALTERAÇÕES
-      await saveMarkersToStorage(markers);
-
-      console.log('🗺️ Marker removido:', removedMarker.name);
-
-      res.json({
-        success: true,
-        message: 'Travel marker deleted successfully',
-        marker: removedMarker,
-      });
-    } else {
-      console.log('⚠️ Marker not found for deletion:', travelId);
-      res.status(404).json({
-        success: false,
-        error: 'Travel marker not found',
-      });
+    // 1. Buscar e deletar imagens do Cloudinary
+    let imagesResult;
+    try {
+      imagesResult = await cloudinary.search
+        .expression(`folder:travels/${travelId}`)
+        .max_results(500)
+        .execute();
+    } catch (cloudinaryError) {
+      console.warn(
+        '⚠️ Erro ao buscar imagens no Cloudinary:',
+        cloudinaryError.message
+      );
+      imagesResult = { total_count: 0, resources: [] };
     }
-  } catch (error) {
-    console.error('❌ Erro ao deletar marker:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to delete travel marker',
-    });
-  }
-});
 
-// ⭐ LIMPEZA DE ÁLBUNS ÓRFÃOS (desenvolvimento)
-router.delete('/cleanup/orphaned', authenticateToken, async (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(404).json({ error: 'Not available in production' });
-  }
+    console.log(
+      `📸 Encontradas ${imagesResult.total_count} imagens para deletar`
+    );
 
-  try {
-    console.log('🧹 Iniciando limpeza de álbuns órfãos...');
+    let successful = 0;
+    let failed = 0;
 
-    const foldersResult = await cloudinary.api.sub_folders('travels');
-    const markers = await loadMarkersFromStorage();
+    if (imagesResult.total_count > 0) {
+      console.log('🗑️ Deletando imagens...');
 
-    const orphanedFolders = [];
-    const cleanedMarkers = [];
-
-    for (const folder of foldersResult.folders) {
-      try {
-        const imagesInFolder = await cloudinary.search
-          .expression(`folder:travels/${folder.name}`)
-          .max_results(1)
-          .execute();
-
-        if (imagesInFolder.total_count === 0) {
-          orphanedFolders.push(folder.name);
-
-          const folderDeleted = await forceDeleteEmptyFolder(
-            `travels/${folder.name}`
-          );
-
-          const markerIndex = markers.findIndex(
-            m => m.travelId === folder.name
-          );
-          if (markerIndex >= 0) {
-            const removedMarker = markers.splice(markerIndex, 1)[0];
-            cleanedMarkers.push(removedMarker);
-            console.log(`🗺️ Marker órfão removido: ${folder.name}`);
+      for (const resource of imagesResult.resources) {
+        try {
+          const result = await cloudinary.uploader.destroy(resource.public_id);
+          if (result.result === 'ok' || result.result === 'not found') {
+            successful++;
+          } else {
+            failed++;
           }
+        } catch (error) {
+          console.error(
+            `❌ Erro ao deletar imagem ${resource.public_id}:`,
+            error
+          );
+          failed++;
+        }
+      }
+
+      console.log(`📊 Resultado: ${successful} sucessos, ${failed} falhas`);
+    }
+
+    // 2. Deletar pasta do Cloudinary
+    let folderDeleted = false;
+    try {
+      await cloudinary.api.delete_folder(`travels/${travelId}`);
+      console.log('📁 Pasta deletada com sucesso');
+      folderDeleted = true;
+    } catch (folderError) {
+      console.warn(
+        '⚠️ Pasta pode não existir ou já foi deletada:',
+        folderError.message
+      );
+      folderDeleted = true; // Considerar como sucesso se não existe
+    }
+
+    // 3. ⭐ REMOVER MARKER COM SINCRONIZAÇÃO COMPLETA
+    console.log('🗺️ Removendo marker do sistema...');
+
+    // Forçar recarga dos markers
+    const markers = await loadMarkersFromStorage(true);
+    const markerIndex = markers.findIndex(m => m.travelId === travelId);
+    let markerRemoved = false;
+    let removedMarker = null;
+
+    if (markerIndex >= 0) {
+      removedMarker = markers.splice(markerIndex, 1)[0];
+      console.log('🗺️ Marker encontrado e removido:', removedMarker.name);
+      markerRemoved = true;
+    } else {
+      console.log('⚠️ Marker não encontrado, pode já ter sido removido');
+      markerRemoved = true; // Considerar como sucesso se não existe
+    }
+
+    // 4. ⭐ SALVAR MARKERS ATUALIZADOS
+    await saveMarkersToStorage(markers);
+
+    // 5. ⭐ VERIFICAR SE FOI O ÚLTIMO ÁLBUM
+    if (markers.length === 0) {
+      console.log(
+        '🧹 Último álbum removido, limpando completamente o sistema de markers'
+      );
+
+      // Forçar limpeza total do arquivo
+      await fs.writeFile(MARKERS_FILE, '[]', 'utf8');
+      travelMarkersCache = [];
+
+      // Verificar se há outras pastas órfãs
+      try {
+        const foldersResult = await cloudinary.api.sub_folders('travels');
+        if (foldersResult.folders.length === 0) {
+          console.log('✅ Nenhum álbum restante no Cloudinary');
+        } else {
+          console.warn(
+            '⚠️ Ainda existem pastas no Cloudinary:',
+            foldersResult.folders
+          );
         }
       } catch (error) {
-        console.error(`❌ Erro ao processar pasta ${folder.name}:`, error);
+        console.log('📁 Pasta travels pode não existir mais');
       }
     }
 
-    if (cleanedMarkers.length > 0) {
-      await saveMarkersToStorage(markers);
-    }
-
-    res.json({
+    const response = {
       success: true,
-      message: `${orphanedFolders.length} álbuns órfãos removidos`,
+      message: `Travel album "${travelId}" deleted successfully`,
       details: {
-        cleanedFolders: orphanedFolders,
-        cleanedMarkers: cleanedMarkers.map(m => m.name),
-        totalCleaned: orphanedFolders.length,
+        imagesDeleted: successful,
+        imagesFailed: failed,
+        totalImages: imagesResult.total_count,
+        markerRemoved: markerRemoved,
+        folderDeleted: folderDeleted,
+        wasEmpty: imagesResult.total_count === 0,
+        remainingMarkers: markers.length,
+        allAlbumsDeleted: markers.length === 0,
       },
+      remainingMarkers: markers.length,
+    };
+
+    console.log('✅ Álbum deletado completamente:', {
+      travelId,
+      imagesRemoved: successful,
+      folderDeleted,
+      markerRemoved,
+      markersRestantes: markers.length,
     });
+
+    res.json(response);
   } catch (error) {
-    console.error('❌ Erro na limpeza:', error);
+    console.error('❌ Erro geral ao deletar álbum:', error);
     res.status(500).json({
       success: false,
-      error: 'Cleanup failed',
+      error: 'Failed to delete travel album',
       details: error.message,
     });
   }
 });
 
-// ⭐ ENDPOINTS COM :travelId POR ÚLTIMO (para evitar conflitos)
+// ⭐ ENDPOINT PARA LIMPAR TODOS OS MARKERS (desenvolvimento/emergência)
+router.delete('/markers/clear-all', authenticateToken, async (req, res) => {
+  try {
+    console.log('🧹 Limpando TODOS os markers...');
+
+    // Limpar arquivo
+    await fs.writeFile(MARKERS_FILE, '[]', 'utf8');
+
+    // Limpar cache
+    travelMarkersCache = [];
+    cacheLoaded = true;
+
+    console.log('✅ Todos os markers foram removidos');
+
+    res.json({
+      success: true,
+      message: 'All markers cleared successfully',
+      markersRemoved: true,
+    });
+  } catch (error) {
+    console.error('❌ Erro ao limpar markers:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to clear markers',
+      details: error.message,
+    });
+  }
+});
+
+// ⭐ ENDPOINT DE SINCRONIZAÇÃO MANUAL
+router.post('/sync', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔄 Sincronização manual iniciada...');
+
+    const syncedMarkers = await syncMarkersWithAlbums();
+
+    res.json({
+      success: true,
+      message: 'Synchronization completed',
+      markersCount: syncedMarkers.length,
+      markers: syncedMarkers,
+    });
+  } catch (error) {
+    console.error('❌ Erro na sincronização:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Synchronization failed',
+      details: error.message,
+    });
+  }
+});
 
 // Get all travels
 router.get('/', authenticateToken, async (req, res) => {
   try {
     console.log('📋 Loading all travels...');
+
+    // ⭐ Sincronizar markers antes de retornar viagens
+    await syncMarkersWithAlbums();
 
     const foldersResult = await cloudinary.api.sub_folders('travels');
     const markers = await loadMarkersFromStorage();
@@ -501,53 +511,16 @@ router.get('/', authenticateToken, async (req, res) => {
           hasMarker: !!marker,
         };
 
-        // Atualizar contagem de imagens no marker se necessário
-        if (marker && marker.imageCount !== travel.imageCount) {
-          console.log(
-            `🔄 Atualizando contagem para ${folder.name}: ${marker.imageCount} → ${travel.imageCount}`
-          );
-          const markerIndex = markers.findIndex(
-            m => m.travelId === folder.name
-          );
-          if (markerIndex >= 0) {
-            markers[markerIndex].imageCount = travel.imageCount;
-            markers[markerIndex].updatedAt = new Date().toISOString();
-          }
-        }
-
         return travel;
       } catch (error) {
         console.error(`❌ Error loading travel ${folder.name}:`, error);
-        const marker = markers.find(m => m.travelId === folder.name);
-        return {
-          id: folder.name,
-          name: folder.name
-            .replace(/-/g, ' ')
-            .replace(/\b\w/g, l => l.toUpperCase()),
-          folder: folder.name,
-          images: [],
-          imageCount: 0,
-          coverImage: null,
-          coordinates: marker?.coordinates || null,
-          location: marker?.location || null,
-          date: marker?.date || null,
-          hasMarker: !!marker,
-        };
+        return null;
       }
     });
 
-    const travels = await Promise.all(travelPromises);
-
-    // Salvar markers atualizados se houve mudanças
-    await saveMarkersToStorage(markers);
+    const travels = (await Promise.all(travelPromises)).filter(t => t !== null);
 
     console.log(`✅ Loaded ${travels.length} travels`);
-    console.log(
-      `🗺️ ${travels.filter(t => t.hasMarker).length} travels have markers`
-    );
-    console.log(
-      `📍 ${travels.filter(t => t.coordinates).length} travels have coordinates`
-    );
 
     res.json({
       success: true,
@@ -561,7 +534,19 @@ router.get('/', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Get travels error:', error);
-    res.status(500).json({ error: 'Failed to fetch travels' });
+
+    // ⭐ Em caso de erro, retornar array vazio
+    res.json({
+      success: false,
+      travels: [],
+      summary: {
+        total: 0,
+        withMarkers: 0,
+        withCoordinates: 0,
+        totalImages: 0,
+      },
+      error: 'Failed to fetch travels',
+    });
   }
 });
 

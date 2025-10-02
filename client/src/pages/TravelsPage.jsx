@@ -1,4 +1,4 @@
-// client/src/pages/TravelsPage.jsx - VERSÃO COMPLETA COM RELOAD AUTOMÁTICO
+// client/src/pages/TravelsPage.jsx - VERSÃO COMPLETA COM CORREÇÕES
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -23,6 +23,7 @@ import {
   AlertCircle,
   Trash2,
   ChevronRight,
+  AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -40,7 +41,7 @@ const TravelsPage = () => {
   const [selectedTravelId, setSelectedTravelId] = useState(null);
   const [showStats, setShowStats] = useState(true);
 
-  // ⭐ FUNÇÃO DE CARREGAMENTO DE DADOS COM FORCE RELOAD
+  // ⭐ FUNÇÃO DE CARREGAMENTO DE DADOS COM FORCE RELOAD E SINCRONIZAÇÃO
   const loadTravelsData = useCallback(
     async (showToast = false, forceReload = false) => {
       try {
@@ -176,9 +177,22 @@ const TravelsPage = () => {
         setSelectedTravel(null);
       }
 
-      toast.success('Álbum removido com sucesso!');
+      // ⭐ Se era o último álbum, mostrar mensagem especial
+      if (details?.allAlbumsDeleted || details?.remainingMarkers === 0) {
+        toast.success('Todos os álbuns foram removidos!', {
+          icon: '🧹',
+          duration: 4000,
+        });
+
+        // Forçar recarga para limpar tudo
+        setTimeout(() => {
+          loadTravelsData(false, true);
+        }, 1000);
+      } else {
+        toast.success('Álbum removido com sucesso!');
+      }
     },
-    [selectedTravel]
+    [selectedTravel, loadTravelsData]
   );
 
   // ⭐ HANDLER PARA CLIQUE NO MARCADOR DO MAPA
@@ -220,6 +234,55 @@ const TravelsPage = () => {
     setShowAlbum(true);
   };
 
+  // ⭐ FUNÇÃO PARA LIMPAR MARKERS ÓRFÃOS
+  const handleClearOrphanedMarkers = async () => {
+    const confirmMessage = `Você tem ${markers.length} marker(s) sem álbuns correspondentes. Deseja limpar todos os markers órfãos? Esta ação não pode ser desfeita.`;
+
+    if (window.confirm(confirmMessage)) {
+      try {
+        setRefreshing(true);
+        await travelService.clearAllMarkers();
+        await loadTravelsData(false, true);
+        toast.success('Todos os markers órfãos foram removidos!', {
+          icon: '🧹',
+          duration: 4000,
+        });
+      } catch (error) {
+        console.error('Erro ao limpar markers:', error);
+        toast.error('Erro ao limpar markers órfãos');
+      } finally {
+        setRefreshing(false);
+      }
+    }
+  };
+
+  // ⭐ FUNÇÃO DE SINCRONIZAÇÃO
+  const handleSync = async () => {
+    try {
+      setRefreshing(true);
+      const result = await travelService.syncMarkers();
+      await loadTravelsData(false, true);
+
+      if (result.markersCount === 0) {
+        toast.success('Sistema sincronizado! Nenhum álbum encontrado.', {
+          icon: '✅',
+        });
+      } else {
+        toast.success(
+          `Sincronização concluída! ${result.markersCount} marker(s) sincronizado(s).`,
+          {
+            icon: '🔄',
+          }
+        );
+      }
+    } catch (error) {
+      console.error('Erro na sincronização:', error);
+      toast.error('Erro na sincronização');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   // ⭐ FILTRAR VIAGENS PELA BUSCA
   const filteredTravels = travels.filter(
     travel =>
@@ -255,6 +318,9 @@ const TravelsPage = () => {
         .filter(Boolean)
     ).size,
   };
+
+  // ⭐ DETECTAR INCONSISTÊNCIAS
+  const hasInconsistency = travels.length === 0 && markers.length > 0;
 
   return (
     <div className='min-h-screen bg-gray-50'>
@@ -305,6 +371,30 @@ const TravelsPage = () => {
                 </span>
               </button>
 
+              {/* ⭐ BOTÕES DE EMERGÊNCIA E SINCRONIZAÇÃO */}
+              {hasInconsistency && (
+                <button
+                  onClick={handleClearOrphanedMarkers}
+                  className='flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors'
+                  disabled={refreshing || loading}
+                  title={`${markers.length} marker(s) órfão(s) detectado(s)`}
+                >
+                  <AlertTriangle className='h-4 w-4' />
+                  <span className='hidden sm:inline'>Limpar Órfãos</span>
+                </button>
+              )}
+
+              {/* Botão de sincronização (sempre visível) */}
+              <button
+                onClick={handleSync}
+                className='flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors'
+                disabled={refreshing || loading}
+                title='Sincronizar markers com álbuns'
+              >
+                <RefreshCw className='h-4 w-4' />
+                <span className='hidden sm:inline'>Sincronizar</span>
+              </button>
+
               {/* Botão de adicionar */}
               <button
                 onClick={() => navigate('/upload')}
@@ -315,6 +405,23 @@ const TravelsPage = () => {
               </button>
             </div>
           </div>
+
+          {/* ⭐ ALERTA DE INCONSISTÊNCIA */}
+          {hasInconsistency && (
+            <div className='mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start space-x-3'>
+              <AlertTriangle className='h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5' />
+              <div>
+                <h4 className='text-sm font-medium text-yellow-800'>
+                  Inconsistência Detectada
+                </h4>
+                <p className='text-sm text-yellow-700 mt-1'>
+                  Existem {markers.length} marker(s) no mapa mas nenhum álbum
+                  correspondente. Use o botão "Limpar Órfãos" para remover os
+                  markers sem álbuns ou "Sincronizar" para atualizar o sistema.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {loading ? (
@@ -343,7 +450,11 @@ const TravelsPage = () => {
                     )}
                   </div>
                   <p className='text-sm text-gray-600 mt-1'>
-                    Clique nos marcadores para explorar os álbuns
+                    {validMarkers.length > 0
+                      ? 'Clique nos marcadores para explorar os álbuns'
+                      : travels.length > 0
+                      ? 'Nenhuma viagem com localização no mapa'
+                      : 'Adicione sua primeira viagem com localização'}
                   </p>
                 </div>
 
@@ -568,18 +679,24 @@ const TravelsPage = () => {
                       <>
                         <Globe className='h-12 w-12 text-gray-400 mx-auto mb-4' />
                         <h3 className='text-lg font-medium text-gray-900 mb-2'>
-                          Nenhuma viagem ainda
+                          {hasInconsistency
+                            ? 'Nenhum álbum encontrado'
+                            : 'Nenhuma viagem ainda'}
                         </h3>
                         <p className='text-gray-600 mb-4'>
-                          Crie seu primeiro álbum de viagem
+                          {hasInconsistency
+                            ? 'Use o botão "Limpar Órfãos" acima para limpar os markers sem álbuns'
+                            : 'Crie seu primeiro álbum de viagem'}
                         </p>
-                        <button
-                          onClick={() => navigate('/upload')}
-                          className='inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all'
-                        >
-                          <Plus className='h-4 w-4 mr-2' />
-                          Adicionar Primeira Viagem
-                        </button>
+                        {!hasInconsistency && (
+                          <button
+                            onClick={() => navigate('/upload')}
+                            className='inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all'
+                          >
+                            <Plus className='h-4 w-4 mr-2' />
+                            Adicionar Primeira Viagem
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
@@ -618,11 +735,19 @@ const TravelsPage = () => {
                   </div>
                 </div>
 
-                {stats.markersOnMap < stats.totalTravels && (
-                  <div className='mt-4 p-3 bg-orange-500 bg-opacity-20 rounded-lg text-sm'>
-                    <AlertCircle className='h-4 w-4 inline mr-2' />
-                    {stats.totalTravels - stats.markersOnMap} viagens sem
-                    localização no mapa
+                {stats.markersOnMap < stats.totalTravels &&
+                  stats.totalTravels > 0 && (
+                    <div className='mt-4 p-3 bg-orange-500 bg-opacity-20 rounded-lg text-sm'>
+                      <AlertCircle className='h-4 w-4 inline mr-2' />
+                      {stats.totalTravels - stats.markersOnMap} viagens sem
+                      localização no mapa
+                    </div>
+                  )}
+
+                {hasInconsistency && (
+                  <div className='mt-4 p-3 bg-red-500 bg-opacity-20 rounded-lg text-sm'>
+                    <AlertTriangle className='h-4 w-4 inline mr-2' />
+                    {markers.length} marker(s) órfão(s) detectado(s)
                   </div>
                 )}
               </div>

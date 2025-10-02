@@ -1,30 +1,16 @@
 [
   {
-    "id": "australia",
-    "name": "Australia",
+    "id": "viagem-para-italia",
+    "name": "Viagem para Italia",
     "coordinates": [
-      -31.9558967,
-      115.8605784
+      41.8933203,
+      12.4829321
     ],
-    "travelId": "australia",
-    "date": "2025-09-01",
-    "location": "Perth, City of Perth, Austrália Ocidental, 6000, Austrália",
-    "imageCount": 4,
-    "createdAt": "2025-09-17T13:37:07.558Z",
-    "updatedAt": "2025-09-17T13:37:07.605Z"
-  },
-  {
-    "id": "viagem-brasil",
-    "name": "Viagem Brasil",
-    "coordinates": [
-      -23.7947246,
-      -46.0236958
-    ],
-    "travelId": "viagem-brasil",
-    "date": "2025-09-10",
-    "location": "Riviera de São Lourenço, Bertioga, Região Imediata de Santos, Região Metropolitana da Baixada Santista, Região Geográfica Intermediária de São Paulo, São Paulo, Região Sudeste, 11261-594, Brasil",
-    "imageCount": 1,
-    "createdAt": "2025-09-17T13:38:32.971Z",
-    "updatedAt": "2025-09-19T14:10:17.829Z"
+    "travelId": "viagem-para-italia",
+    "date": "2025-06-06",
+    "location": "Roma, Roma Capitale, Lácio, Itália",
+    "imageCount": 0,
+    "createdAt": "2025-10-02T20:06:36.121Z",
+    "updatedAt": "2025-10-02T20:06:36.121Z"
   }
 ]

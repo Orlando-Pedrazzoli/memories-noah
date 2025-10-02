@@ -1,4 +1,4 @@
-// client/src/services/api.js - VERSÃO CORRIGIDA COM FALLBACK
+// client/src/services/api.js - VERSÃO COMPLETA COM CORREÇÕES
 
 import axios from 'axios';
 import Cookies from 'js-cookie';
@@ -496,6 +496,34 @@ export const travelService = {
       return response.data;
     } catch (error) {
       console.error('❌ Erro na limpeza:', error);
+      throw error;
+    }
+  },
+
+  // ⭐ LIMPAR TODOS OS MARKERS (emergência)
+  clearAllMarkers: async () => {
+    console.log('🧹 travelService.clearAllMarkers chamado');
+
+    try {
+      const response = await api.delete('/travel/markers/clear-all');
+      console.log('✅ Todos os markers limpos');
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro ao limpar markers:', error);
+      throw error;
+    }
+  },
+
+  // ⭐ SINCRONIZAR MARKERS COM ÁLBUNS
+  syncMarkers: async () => {
+    console.log('🔄 travelService.syncMarkers chamado');
+
+    try {
+      const response = await api.post('/travel/sync');
+      console.log('✅ Sincronização concluída:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Erro na sincronização:', error);
       throw error;
     }
   },
